@@ -1,0 +1,79 @@
+<#
+.SYNOPSIS
+  Sets up ClipLab on this PC: Python, ffmpeg, a config file, and start-at-sign-in.
+
+.EXAMPLE
+  # One machine: OBS saves replays to C:\Clips, shorts go to Videos\ClipLab Shorts
+  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips
+
+.EXAMPLE
+  # Also let your phone / other PCs on your home network open the app
+  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips -AllowLan
+#>
+param(
+  [string]$WatchDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'Replays'),
+  [string]$OutputDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'ClipLab Shorts'),
+  [switch]$AllowLan,
+  [switch]$InstallObs,
+  [switch]$NoStartup,
+  [switch]$Force
+)
+$ErrorActionPreference = 'Stop'
+$Repo = Split-Path $PSScriptRoot -Parent
+$Home2 = if ($env:CLIPLAB_HOME) { $env:CLIPLAB_HOME } else { Join-Path $env:USERPROFILE 'ClipLab' }
+$Utf8 = New-Object Text.UTF8Encoding $false
+function Step($n, $text) { Write-Host "[$n/5] $text" -ForegroundColor Cyan }
+function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
+
+Step 1 'Python 3.12+'
+$py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Launcher\py.exe'
+if (-not (Test-Path $py)) { $py = (Get-Command py -ErrorAction SilentlyContinue).Source }
+$ok = $false
+if ($py) { & $py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)" 2>$null; $ok = ($LASTEXITCODE -eq 0) }
+if (-not $ok) {
+  winget install --id Python.Python.3.12 -e --silent --scope user --accept-package-agreements --accept-source-agreements | Out-Null
+  $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Launcher\py.exe'
+}
+$pyw = Join-Path (Split-Path $py) 'pyw.exe'
+
+Step 2 'ffmpeg'
+$bin = Join-Path $Home2 'bin'
+if (-not (Test-Path (Join-Path $bin 'ffmpeg.exe')) -and -not (Have ffmpeg)) {
+  winget install --id Gyan.FFmpeg -e --silent --scope user --accept-package-agreements --accept-source-agreements | Out-Null
+  $found = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $found) { throw 'ffmpeg did not install. Install it (winget install Gyan.FFmpeg) and run setup again.' }
+  New-Item -ItemType Directory -Force $bin | Out-Null
+  Copy-Item (Join-Path $found.DirectoryName 'ffmpeg.exe'), (Join-Path $found.DirectoryName 'ffprobe.exe') $bin -Force
+}
+if ($InstallObs -and -not (Test-Path "$env:ProgramFiles\obs-studio")) {
+  winget install --id OBSProject.OBSStudio -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
+}
+
+Step 3 'Config'
+New-Item -ItemType Directory -Force $Home2, $WatchDir, $OutputDir | Out-Null
+$config = Join-Path $Home2 'config.json'
+if ((Test-Path $config) -and -not $Force) {
+  Write-Host "  Keeping your existing $config (use -Force to replace it)."
+} else {
+  $cfg = [ordered]@{ watch_dir = (Resolve-Path $WatchDir).Path; output_dir = (Resolve-Path $OutputDir).Path; allow_lan = [bool]$AllowLan }
+  [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json), $Utf8)
+}
+Push-Location $Repo
+& $py -3 -m cliplab config | Select-Object -First 3
+Pop-Location
+
+Step 4 'Start at sign-in'
+if (-not $NoStartup) {
+  $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Startup')) 'ClipLab.lnk'))
+  $lnk.TargetPath = $pyw; $lnk.Arguments = '-3 -m cliplab'; $lnk.WorkingDirectory = $Repo; $lnk.Save()
+}
+
+Step 5 'Starting ClipLab'
+Start-Process $pyw -ArgumentList '-3 -m cliplab' -WorkingDirectory $Repo
+Start-Sleep 4
+$port = (Get-Content $config -Raw | ConvertFrom-Json).port; if (-not $port) { $port = 8765 }
+Write-Host ''
+Write-Host "ClipLab is running: http://localhost:$port" -ForegroundColor Green
+Write-Host "  Raw clips:  $WatchDir   (point OBS's replay buffer here)"
+Write-Host "  Shorts:     $OutputDir"
+if ($AllowLan) { Write-Host '  Other devices: allow Python through Windows Firewall on Private networks, then use this PC''s IP.' }

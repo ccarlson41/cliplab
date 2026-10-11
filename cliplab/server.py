@@ -1,0 +1,361 @@
+"""ClipLab app: a small web app for browsing and managing the shorts.
+
+Serves http://localhost:<port> (and, with allow_lan, other devices on your home
+network). Shows clips arriving and rendering, plays, downloads, copies captions,
+keeps or tosses shorts, re-cuts a short from its raw clip, builds highlight reels,
+and edits render settings. Jobs are handed to the engine through requests/.
+"""
+import ipaddress
+import json
+import mimetypes
+import re
+import shutil
+import subprocess
+import threading
+import time
+import urllib.request
+import uuid
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, quote, unquote, urlparse
+
+from .settings import (CONFIG, DECISIONS, FAILED, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
+                       TOSSED, VIDEO_EXT, WEB, clean_config, load_config, output_dir, read_json, tool, watch_dir,
+                       write_json)
+
+MULTI = ("DOUBLE", "TRIPLE", "QUADRA", "PENTA")
+thumb_lock = threading.Lock()
+sync_cache = {"at": 0.0, "data": None}
+
+
+def syncthing(peer):
+    """Two-machine mode: connection to the peer and what's still copying in (cached for 2 s)."""
+    if not (peer.get("syncthing_home") and peer.get("syncthing_device")):
+        return {"online": None, "paused": False, "copying": [], "pct": None}
+    if time.time() - sync_cache["at"] < 2 and sync_cache["data"]:
+        return sync_cache["data"]
+    try:
+        gui = ET.parse(Path(peer["syncthing_home"]) / "config.xml").getroot().find("gui")
+        base, key = "http://" + gui.findtext("address"), gui.findtext("apikey")
+
+        def get(path):
+            req = urllib.request.Request(f"{base}/rest/{path}", headers={"X-API-Key": key})
+            with urllib.request.urlopen(req, timeout=2) as r:
+                return json.load(r)
+
+        conn = get("system/connections")["connections"].get(peer["syncthing_device"], {})
+        files, pct = [], None
+        folder = peer.get("syncthing_folder")
+        if folder:
+            need = get(f"db/need?folder={folder}&perpage=100")
+            files = [f for k in ("progress", "queued", "rest") for f in need.get(k, [])]
+            need_bytes = get(f"db/status?folder={folder}").get("needBytes", 0)
+            total = sum(f.get("size", 0) for f in files)
+            pct = round(100 * (total - need_bytes) / total) if total else None
+        data = {"online": bool(conn.get("connected")), "paused": bool(conn.get("paused")),
+                "copying": [f["name"] for f in files], "pct": pct}
+    except Exception:
+        data = {"online": None, "paused": False, "copying": [], "pct": None}
+    sync_cache.update(at=time.time(), data=data)
+    return data
+
+
+def engine_health():
+    status = read_json(STATUS, None)
+    try:
+        age = time.time() - float(HEARTBEAT.read_text())
+    except (FileNotFoundError, ValueError):
+        age = None
+    busy = bool(status) and time.time() - status.get("started", 0) < 900
+    return {"alive": busy or (age is not None and age < 30), "busy": busy, "status": status,
+            "heartbeat_age": None if age is None else round(age)}
+
+
+def recorded_at(key, fallback):
+    """When the clip was recorded: from OBS's "Replay YYYY-MM-DD HH-MM-SS" name, else the given time."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2}) (\d{2})-(\d{2})-(\d{2})", key)
+    return f"{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}" if m else fallback
+
+
+def stem_of(entry):
+    first = (entry.get("outputs") or [""])[0]
+    return first.rsplit("_", 1)[0] if "_" in first else Path(first).stem
+
+
+def build_state():
+    cfg = load_config()
+    peer = cfg["peer"]
+    watch, out = watch_dir(cfg), output_dir(cfg)
+    processed = read_json(STATE, {})
+    health = engine_health()
+    status = health["status"] or {}
+    decisions = read_json(DECISIONS, {})
+    sync = syncthing(peer)
+    pending = [read_json(p, {}) for p in REQUESTS.glob("*.json")] if REQUESTS.exists() else []
+    items = {}
+
+    for name in sync["copying"]:
+        if Path(name).suffix.lower() in VIDEO_EXT:
+            key = name.replace("/", "\\")
+            items[key] = {"key": key, "stage": "copying", "pct": sync["pct"] if len(sync["copying"]) <= 2 else None}
+
+    if watch.exists():
+        for p in watch.rglob("*"):
+            if not p.is_file() or p.suffix.lower() not in VIDEO_EXT or p.name.startswith((".syncthing", "~")):
+                continue
+            key = str(p.relative_to(watch))
+            if key in processed or key in items:
+                continue
+            rendering = status.get("key") == key
+            items[key] = {"key": key, "stage": "rendering" if rendering else "queued",
+                          "tagged": (watch / (key + ".json")).exists(),
+                          "time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec="seconds")}
+
+    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+    stats = {"total": 0, "week": 0, "multikills": 0, "kept": 0}
+    for key, entry in processed.items():
+        if "failed" in entry:
+            try:
+                reason = (FAILED / f"{Path(key).stem}.txt").read_text(encoding="utf-8").strip().splitlines()[-1][:200]
+            except (FileNotFoundError, IndexError):
+                reason = ""
+            items[key] = {"key": key, "stage": "failed", "time": entry["failed"], "reason": reason}
+            continue
+        day = entry.get("dir", "")
+        videos = {}
+        for name in entry.get("outputs", []):
+            if (out / day / name).exists():
+                videos[name.rsplit("_", 1)[-1].removesuffix(".mp4")] = f"{day}/{name}"
+        decision = decisions.get(key)
+        if decision == "toss" or not videos:
+            continue
+        stem = stem_of(entry)
+        caption_path = out / day / f"{stem}_caption.txt"
+        labels = entry.get("labels") or []
+        is_reel = bool(entry.get("reel"))
+        raw = None if is_reel else watch / key
+        paths = {}
+        if peer.get("clips_path") and not is_reel:
+            paths[f"{peer['name'] or 'Peer'} · original"] = f"{peer['clips_path']}\\{key}"
+        if peer.get("shorts_path"):
+            paths[f"{peer['name'] or 'Peer'} · shorts"] = f"{peer['shorts_path']}\\{day}"
+        if not is_reel and not peer.get("clips_path"):
+            paths["Original"] = str(watch / key)
+        paths["Shorts" if not peer.get("name") else "This PC · shorts"] = str(out / day)
+        items[key] = {
+            "key": key, "stem": stem, "stage": "ready", "decision": decision, "reel": is_reel,
+            "time": entry.get("done") if is_reel else recorded_at(key, entry.get("done")), "day": day,
+            "videos": videos, "length": entry.get("length"), "labels": labels,
+            "title": entry.get("title") or "", "champion": entry.get("champion") or "",
+            "caption": caption_path.read_text(encoding="utf-8") if caption_path.exists() else "",
+            "start": entry.get("start"), "end": entry.get("end"), "src_duration": entry.get("src_duration"),
+            "raw": quote(key.replace("\\", "/")) if raw and raw.exists() else None,
+            "trimmed": entry.get("trimmed", False),
+            "busy": status.get("key") == key or any(r.get("key") == key for r in pending),
+            "paths": paths,
+        }
+        stats["total"] += 1
+        stats["week"] += (entry.get("done") or "") >= week_ago
+        stats["multikills"] += any(lbl.startswith(MULTI) for lbl in labels)
+        stats["kept"] += decision == "keep"
+
+    stats["free_gb"] = round(shutil.disk_usage(HOME).free / 1e9, 1)
+    done_dir = REQUESTS / "done"
+    results = sorted((read_json(p, {}) for p in done_dir.glob("*.json")), key=lambda r: r.get("time", ""))[-10:] \
+        if done_dir.exists() else []
+    clips = sorted(items.values(), key=lambda i: i.get("time") or "9999", reverse=True)
+    editable = {k: v for k, v in cfg.items() if k not in ("peer", "watch_dir", "output_dir", "ffmpeg", "port",
+                                                          "allow_lan")}
+    return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
+            "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
+            "results": results, "queue": len(pending), "now": datetime.now().isoformat(timespec="seconds")}
+
+
+def inside(base, rel):
+    path = (base / unquote(rel)).resolve()
+    return path if base.resolve() in path.parents and path.is_file() else None
+
+
+def thumbnail(rel):
+    src = inside(output_dir(), rel)
+    if not src:
+        return None
+    THUMBS.mkdir(parents=True, exist_ok=True)
+    out = THUMBS / (src.parent.name + "_" + src.stem + ".jpg")
+    with thumb_lock:
+        if not out.exists() or out.stat().st_mtime < src.stat().st_mtime:
+            for at in ("4.5", "1", "0"):
+                subprocess.run([str(tool("ffmpeg")), "-hide_banner", "-loglevel", "error", "-y", "-ss", at,
+                                "-i", str(src), "-frames:v", "1", "-vf", "scale=360:-2", "-q:v", "4", str(out)],
+                               creationflags=NO_WINDOW, capture_output=True)
+                if out.exists() and out.stat().st_size:
+                    break
+    return out if out.exists() else None
+
+
+def decide(key, decision):
+    decisions = read_json(DECISIONS, {})
+    if decision == "toss":
+        entry = read_json(STATE, {}).get(key, {})
+        day, stem, out = entry.get("dir"), stem_of(entry), output_dir()
+        if day:
+            (TOSSED / day).mkdir(parents=True, exist_ok=True)
+            for name in entry.get("outputs", []) + [f"{stem}_caption.txt"]:
+                if (out / day / name).exists():
+                    shutil.move(str(out / day / name), str(TOSSED / day / name))
+    if decision == "clear":
+        decisions.pop(key, None)
+    else:
+        decisions[key] = decision
+    write_json(DECISIONS, decisions)
+
+
+def queue_job(job):
+    REQUESTS.mkdir(parents=True, exist_ok=True)
+    job["id"] = uuid.uuid4().hex[:8]
+    write_json(REQUESTS / f"{job['id']}.json", job)
+    return job["id"]
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ClipLab/3"
+
+    def log_message(self, *args):
+        pass
+
+    def local_only(self):
+        ip = ipaddress.ip_address(self.client_address[0].split("%")[0])
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        if ip.is_loopback or ((ip.is_private or ip.is_link_local) and load_config()["allow_lan"]):
+            return True
+        self.send_error(403, "ClipLab only answers this PC (and your home network when allow_lan is on)")
+        return False
+
+    def send_json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_file(self, path, download=False, cache=False):
+        size = path.stat().st_size
+        start, end, status = 0, size - 1, 200
+        m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range", ""))
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            status = 206
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+        self.send_response(status)
+        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-cache")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        if download:
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(path.name)}")
+        self.end_headers()
+        try:
+            with open(path, "rb") as f:
+                f.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = f.read(min(262144, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (ConnectionError, OSError):
+            pass
+
+    def do_GET(self):
+        if not self.local_only():
+            return
+        url = urlparse(self.path)
+        route = url.path
+        if route in ("/", "/index.html"):
+            return self.send_file(WEB / "index.html")
+        if route in ("/manifest.webmanifest", "/icon.svg"):
+            return self.send_file(WEB / route.lstrip("/"), cache=True)
+        if route == "/api/state":
+            return self.send_json(build_state())
+        if route.startswith("/media/"):
+            path = inside(output_dir(), route[len("/media/"):])
+            return self.send_file(path, download="dl" in parse_qs(url.query)) if path else self.send_error(404)
+        if route.startswith("/raw/"):
+            path = inside(watch_dir(), route[len("/raw/"):])
+            return self.send_file(path) if path else self.send_error(404)
+        if route.startswith("/thumb/"):
+            path = thumbnail(route[len("/thumb/"):])
+            return self.send_file(path, cache=True) if path else self.send_error(404)
+        self.send_error(404)
+
+    def do_POST(self):
+        if not self.local_only():
+            return
+        route = urlparse(self.path).path
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        except json.JSONDecodeError:
+            return self.send_json({"error": "That request wasn't valid JSON."}, 400)
+        state = read_json(STATE, {})
+
+        if route == "/api/decide":
+            key, decision = body.get("key"), body.get("decision")
+            if decision not in ("keep", "toss", "clear") or key not in state:
+                return self.send_json({"error": "Send a known clip and keep, toss or clear."}, 400)
+            decide(key, decision)
+            return self.send_json({"ok": True})
+
+        if route == "/api/rerender":
+            key = body.get("key")
+            if key not in state or state[key].get("reel") or not (watch_dir() / key).exists():
+                return self.send_json({"error": "The raw clip for this short is gone, so it can't be re-cut."}, 400)
+            job = {"type": "rerender", "key": key}
+            if "start" in body and "end" in body:
+                try:
+                    start, end = float(body["start"]), float(body["end"])
+                except (TypeError, ValueError):
+                    return self.send_json({"error": "Start and end need to be numbers of seconds."}, 400)
+                if end - start < 1:
+                    return self.send_json({"error": "Keep at least 1 second between start and end."}, 400)
+                job.update(start=start, end=end)
+            return self.send_json({"ok": True, "id": queue_job(job)})
+
+        if route == "/api/reel":
+            keys = [k for k in body.get("keys", []) if k in state]
+            if len(keys) < 2:
+                return self.send_json({"error": "Pick at least two shorts for a reel."}, 400)
+            return self.send_json({"ok": True, "id": queue_job({"type": "reel", "keys": keys,
+                                                                  "style": body.get("style", "crop")})})
+
+        if route == "/api/config":
+            cfg, error = clean_config(body)
+            if error:
+                return self.send_json({"error": error}, 400)
+            write_json(CONFIG, cfg)
+            return self.send_json({"ok": True})
+
+        self.send_error(404)
+
+
+def main():
+    cfg = load_config()
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
+    mimetypes.add_type("image/svg+xml", ".svg")
+    host = "0.0.0.0" if cfg["allow_lan"] else "127.0.0.1"
+    ThreadingHTTPServer((host, int(cfg["port"])), Handler).serve_forever()

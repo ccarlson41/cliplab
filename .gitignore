@@ -1,0 +1,20 @@
+# When the repo is cloned into the ClipLab home folder (the default), keep its data out of git.
+Inbox/
+Ready/
+Tossed/
+Failed/
+work/
+requests/
+logs/
+thumbs/
+bin/
+syncthing/
+processed.json
+status.json
+heartbeat
+config.json
+decisions.json
+*.tmp
+__pycache__/
+.stfolder/
+.stignore
