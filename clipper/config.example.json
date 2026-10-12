@@ -1,0 +1,51 @@
+{
+  "_help": "Copy this file to config.json (same folder) and edit it. Saved changes apply within a few seconds; no restart needed.",
+
+  "clipsDir": "C:\\Clips",
+
+  "clipOn": {
+    "_multikillMinimum": "2 = double kill and up, 3 = triple and up, 4 = quadra and up, 0 = never clip multikills",
+    "multikillMinimum": 2,
+    "ace": true,
+    "firstBlood": true,
+    "baronSteal": true,
+    "dragonSteal": true,
+    "heraldSteal": true
+  },
+
+  "audio": {
+    "_help": "source = the OBS audio input's name, on = true/false, volume = 0.0 to 1.0. Pushed to OBS when this file is saved and whenever the clipper connects. Delete an entry to leave that input alone.",
+    "game":    { "source": "Game Audio",    "on": true,  "volume": 1.0 },
+    "discord": { "source": "Discord Audio", "on": true,  "volume": 0.8 },
+    "mic":     { "source": "Mic",           "on": false, "volume": 0.8 }
+  },
+
+  "timing": {
+    "_help": "Seconds. After a multikill below a penta the save waits longer in case it grows into a bigger one.",
+    "secondsAfterEvent": 4,
+    "secondsToWaitForBiggerMultikill": 10,
+    "longestChainSeconds": 40,
+    "pollSeconds": 1,
+    "idlePollSeconds": 10
+  },
+
+  "obs": {
+    "_help": "The websocket password is read from OBS's own settings file unless passwordFile points at a text file holding it. Never put the password in this file.",
+    "port": 4455,
+    "launchIfClosed": true,
+    "exe": "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
+    "passwordFile": ""
+  },
+
+  "sync": {
+    "_help": "Two-PC setups: pause Syncthing while a game runs so uploads never compete with League. syncthingConfig is Syncthing's config.xml (empty = %LOCALAPPDATA%\\Syncthing\\config.xml).",
+    "pauseDuringGames": false,
+    "syncthingConfig": ""
+  },
+
+  "cleanup": {
+    "_help": "rawClipDays: raw clips in clipsDir go to the Recycle Bin after this many days (0 = never). If shortsDir is set, clips with no short there yet get twice as long. Move a clip out of clipsDir to keep it.",
+    "rawClipDays": 0,
+    "shortsDir": ""
+  }
+}

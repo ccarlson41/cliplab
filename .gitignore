@@ -18,3 +18,10 @@ decisions.json
 __pycache__/
 .stfolder/
 .stignore
+
+# clipper/: local settings, password file, logs
+clipper/config.json
+clipper/tmp/
+clipper/*.log
+clipper/*.log.old
+*password*.txt

@@ -41,7 +41,7 @@ Everything runs locally. Nothing is uploaded anywhere.
 Add `-AllowLan` to setup to open the app from your phone on the same Wi-Fi.
 
 ## Auto-clipping League
-The `clipper/` folder (coming soon) watches the game through Riot's official local [Live Client Data API](https://developer.riotgames.com/docs/lol#game-client-api), saves a replay through OBS on multikills, aces and objective steals, and writes a [tag file](docs/tag-format.md) so ClipLab can trim and label the short. Any other tool can write tag files too; the format is documented.
+The [`clipper/`](clipper/README.md) folder watches the game through Riot's official local [Live Client Data API](https://developer.riotgames.com/docs/lol#game-client-api), saves a replay through OBS on multikills, aces and objective steals, and writes a [tag file](docs/tag-format.md) so ClipLab can trim and label the short. Any other tool can write tag files too; the format is documented.
 
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
