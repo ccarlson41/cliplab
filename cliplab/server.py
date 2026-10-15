@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from . import obs
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
                        TOSSED, VIDEO_EXT, WEB, clean_config, load_config, output_dir, read_json, tool, watch_dir,
                        write_json)
@@ -82,6 +83,21 @@ def recorded_at(key, fallback):
 def stem_of(entry):
     first = (entry.get("outputs") or [""])[0]
     return first.rsplit("_", 1)[0] if "_" in first else Path(first).stem
+
+
+def latest_clip(watch):
+    """The newest video in the watch folder, for the Getting started test."""
+    clips = [p for p in watch.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXT] if watch.exists() else []
+    newest = max(clips, key=lambda p: p.stat().st_mtime, default=None)
+    return {"name": str(newest.relative_to(watch)), "mtime": newest.stat().st_mtime} if newest else None
+
+
+def setup_state():
+    """Everything the Getting started screen checks: OBS's settings and whether a replay has arrived."""
+    cfg = load_config()
+    watch = watch_dir(cfg)
+    return {"watch_dir": str(watch), "obs": obs.check(watch), "obs_running": obs.obs_running(),
+            "latest": latest_clip(watch), "now": time.time(), "game": cfg["game"]}
 
 
 def build_state():
@@ -169,10 +185,13 @@ def build_state():
         if done_dir.exists() else []
     clips = sorted(items.values(), key=lambda i: i.get("time") or "9999", reverse=True)
     editable = {k: v for k, v in cfg.items() if k not in ("peer", "watch_dir", "output_dir", "ffmpeg", "port",
-                                                          "allow_lan")}
+                                                          "allow_lan", "setup_done")}
+    # new installs get the Getting started guide; two-PC setups record on the other PC, and anyone with shorts is set up
+    setup_needed = not cfg["setup_done"] and not peer.get("name") and not processed
     return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
             "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
-            "games": {k: g["name"] for k, g in GAMES.items()}, "results": results, "queue": len(pending),
+            "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
+            "queue": len(pending),
             "now": datetime.now().isoformat(timespec="seconds")}
 
 
@@ -296,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_file(WEB / route.lstrip("/"), cache=True)
         if route == "/api/state":
             return self.send_json(build_state())
+        if route == "/api/setup":
+            return self.send_json(setup_state())
         if route.startswith("/media/"):
             path = inside(output_dir(), route[len("/media/"):])
             return self.send_file(path, download="dl" in parse_qs(url.query)) if path else self.send_error(404)
@@ -350,6 +371,12 @@ class Handler(BaseHTTPRequestHandler):
             cfg, error = clean_config(body)
             if error:
                 return self.send_json({"error": error}, 400)
+            write_json(CONFIG, cfg)
+            return self.send_json({"ok": True})
+
+        if route == "/api/setup/done":
+            cfg = load_config()
+            cfg["setup_done"] = True
             write_json(CONFIG, cfg)
             return self.send_json({"ok": True})
 

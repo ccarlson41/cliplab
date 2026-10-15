@@ -40,6 +40,7 @@ DEFAULTS = {
     "ffmpeg": "",                          # folder holding ffmpeg/ffprobe; empty = HOME\\bin, then PATH
     "port": 8765,
     "allow_lan": False,                    # True lets phones/other PCs on your home network open the app
+    "setup_done": False,                   # the app's Getting started guide was finished (or dismissed)
     "peer": {                              # optional second machine (two-machine mode via Syncthing)
         "name": "",                        # e.g. "Gaming PC"; empty = one-machine mode
         "syncthing_home": "",              # this machine's Syncthing config folder (holds config.xml)

@@ -23,9 +23,20 @@ Everything runs locally. Nothing is uploaded anywhere.
 ## Requirements
 - Windows 10 or 11
 - [OBS Studio](https://obsproject.com/) with the **Replay Buffer**
-- Python 3.12+ and ffmpeg (the setup script installs both with winget)
+- Python 3.12+ and ffmpeg (the installer gets both with winget)
 
-## Quick start (one PC)
+## Install
+Open **PowerShell** (Start menu, type *PowerShell*, press Enter), paste this line and press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/ccarlson41/cliplab/main/install.ps1 | iex
+```
+
+It asks which game you play, where OBS should save replays, and whether your phone should be able to open the app. Then it downloads ClipLab (no git needed), installs Python and ffmpeg, starts ClipLab, sets it to start when you sign in, and opens the app. A **Getting started** guide there walks you through OBS's settings and checks each one, then has you save a test replay. Reopen the guide any time from Settings (⚙).
+
+Run the same line again later to update ClipLab; your settings and shorts are kept. To see what it runs first, read [install.ps1](install.ps1).
+
+## Manual install (one PC)
 1. **Get the code:**
    ```
    git clone https://github.com/ccarlson41/cliplab.git %USERPROFILE%\ClipLab
@@ -36,7 +47,7 @@ Everything runs locally. Nothing is uploaded anywhere.
    ```
    It installs Python and ffmpeg if needed, writes `config.json`, starts ClipLab, and sets it to start when you sign in.
 3. **Set up OBS:** Settings → Output → Replay Buffer: on, 45–60 seconds. Set the recording path to the same folder (`C:\Clips`) and give *Save Replay* a hotkey.
-4. Play, press your replay hotkey after a big play, then open **http://localhost:8765**.
+4. Play, press your replay hotkey after a big play, then open **http://localhost:8765**. (Or follow the Getting started guide there.)
 
 Add `-AllowLan` to setup to open the app from your phone on the same Wi-Fi.
 
@@ -73,6 +84,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `port` | `8765` | App port |
 | `allow_lan` | `false` | Let other devices on your home network open the app |
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
+| `setup_done` | `false` | Set when you finish the app's Getting started guide; set it back to `false` to see the guide on its own again |
 | `game` | `league` | `league` or `r6`; sets caption hashtags (a tag file naming its game wins) |
 | `styles`, `lead_in`, `tail`, `min_seconds`, `max_seconds`, `blur_zoom`, `watermark`, `crf`, `maxrate_mbps`, `tag_wait`, `recycle_tossed_after_days` | | Render settings (also in the app) |
 
