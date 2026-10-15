@@ -191,8 +191,8 @@ def process_clip(clip, key, state, cfg, override=None):
     previous = state.get(key, {})
     duration, has_audio = probe(clip, cfg)
     tags = load_tags(clip)
-    # a re-cut keeps the clip's game (shorts from before game support are all League)
-    game = previous.get("game", "league") if override else game_of(tags, cfg)
+    # a re-cut or re-render keeps the clip's game (shorts from before game support are all League)
+    game = previous.get("game", "league") if previous.get("done") else game_of(tags, cfg)
     start, length, overlays = plan(duration, tags, cfg, override)
     day = previous.get("dir") or datetime.now().strftime("%Y-%m-%d")
     out_dir = output_dir(cfg) / day
