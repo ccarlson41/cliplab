@@ -1,6 +1,6 @@
 # ClipLab
 
-**Turns your League of Legends replays into ready-to-post vertical shorts, automatically.**
+**Turns your League of Legends and Rainbow Six Siege replays into ready-to-post vertical shorts, automatically.**
 
 Save a replay in OBS (or let the auto-clipper catch your multikills), and about a minute later you have 1080×1920 shorts trimmed to the action, with **TRIPLE KILL**-style text on screen and a caption ready to paste. A small web app lets you watch, keep, toss, re-cut and download them, and stitch a game's best plays into a highlight reel.
 
@@ -43,6 +43,11 @@ Add `-AllowLan` to setup to open the app from your phone on the same Wi-Fi.
 ## Auto-clipping League
 The [`clipper/`](clipper/README.md) folder watches the game through Riot's official local [Live Client Data API](https://developer.riotgames.com/docs/lol#game-client-api), saves a replay through OBS on multikills, aces and objective steals, and writes a [tag file](docs/tag-format.md) so ClipLab can trim and label the short. Any other tool can write tag files too; the format is documented.
 
+## Rainbow Six Siege
+Pick **Rainbow Six Siege** under **Game** in the app's settings (⚙), or run setup with `-Game r6`. Captions then get Siege hashtags instead of League ones, and ClipLab stops waiting for tag files (*Wait for tag file* is set to 0).
+
+There's no auto-clipper for Siege: Ubisoft doesn't offer a local game-data API like Riot's, and reading the game's memory would risk a BattlEye ban. Press your OBS *Save Replay* hotkey right after a good round. Each short is the last `max_seconds` of the replay, and you can re-cut it in the app.
+
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
 
@@ -53,7 +58,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | **Player** | Switch Blur fill / Center crop, Download, Copy caption, Keep, Toss. Keys: ← → browse · K keep · T toss · D download · C copy · 1 / 2 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
-| **Settings (⚙)** | Versions, watermark, gameplay size, seconds before/after the play, min/max length, quality. |
+| **Settings (⚙)** | Game, versions, watermark, gameplay size, seconds before/after the play, min/max length, quality. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -68,6 +73,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `port` | `8765` | App port |
 | `allow_lan` | `false` | Let other devices on your home network open the app |
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
+| `game` | `league` | `league` or `r6`; sets caption hashtags (a tag file naming its game wins) |
 | `styles`, `lead_in`, `tail`, `min_seconds`, `max_seconds`, `blur_zoom`, `watermark`, `crf`, `maxrate_mbps`, `tag_wait`, `recycle_tossed_after_days` | | Render settings (also in the app) |
 
 `python -m cliplab config` prints where everything is and the settings in effect.
@@ -88,7 +94,7 @@ python -m cliplab config   show paths and settings
 - Logs: `logs\engine.log`, `logs\launcher.log`.
 
 ## Disclaimer
-ClipLab isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
+ClipLab isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc. ClipLab isn't affiliated with or endorsed by Ubisoft; Rainbow Six Siege is a trademark of Ubisoft Entertainment.
 
 ## License
 [MIT](LICENSE)

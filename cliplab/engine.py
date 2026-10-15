@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from .settings import (FAILED, HEARTBEAT, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
+from .settings import (FAILED, GAMES, HEARTBEAT, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
                        check_folders, load_config, output_dir, read_json, recycle, tag_path, tool, watch_dir,
                        write_json)
 
@@ -61,6 +61,15 @@ def load_tags(clip):
     """The auto-clipper's tag file for this clip, or None."""
     data = read_json(tag_path(clip), None)
     return data if isinstance(data, dict) and data.get("events") else None
+
+
+def game_of(tags, cfg):
+    """Which game a clip is from: the one its tag file names, if ClipLab knows it, else the game in settings."""
+    named = (tags or {}).get("game")
+    for key, game in GAMES.items():
+        if game["name"] == named:
+            return key
+    return cfg.get("game") if cfg.get("game") in GAMES else "league"
 
 
 def safe_text(s):
@@ -106,7 +115,7 @@ def style_graph(style, src, out, cfg):
                 f"boxblur=8:2,eq=brightness=-0.10,scale=1080:1920[{src}bg];"
                 f"[{src}b]crop=iw*{z:.3f}:ih:iw*{(1 - z) / 2:.3f}:0,scale=1080:-2[{src}fg];"
                 f"[{src}bg][{src}fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[{out}]")
-    # League's camera keeps your champion near the middle of the screen.
+    # League's camera keeps your champion near the middle of the screen; shooters keep the crosshair there.
     return f"[{src}]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920,format=yuv420p[{out}]"
 
 
@@ -165,13 +174,14 @@ def render(src, out_dir, stem, start, length, has_audio, overlays, cfg):
     return [t.name for t in tmps]
 
 
-def caption_for(tags, fallback):
+def caption_for(tags, fallback, game="league"):
+    hashtags = f"{GAMES[game]['hashtags']} #gaming #shorts"
     if not tags:
-        return f"{fallback}\n\n#leagueoflegends #lol #gaming #shorts\n"
-    champ = tags.get("champion", "")
+        return f"{fallback}\n\n{hashtags}\n"
+    champ = tags.get("champion", "")   # or the operator, agent... whoever the player was
     title = tags.get("title") or " / ".join(e.get("label", "") for e in tags["events"])
     tag_champ = f" #{''.join(c for c in champ if c.isalnum()).lower()}" if champ else ""
-    return f"{title}\n\n#leagueoflegends #lol #gaming #shorts{tag_champ}\n"
+    return f"{title}\n\n{hashtags}{tag_champ}\n"
 
 
 # ---------- jobs ----------
@@ -181,6 +191,8 @@ def process_clip(clip, key, state, cfg, override=None):
     previous = state.get(key, {})
     duration, has_audio = probe(clip, cfg)
     tags = load_tags(clip)
+    # a re-cut keeps the clip's game (shorts from before game support are all League)
+    game = previous.get("game", "league") if override else game_of(tags, cfg)
     start, length, overlays = plan(duration, tags, cfg, override)
     day = previous.get("dir") or datetime.now().strftime("%Y-%m-%d")
     out_dir = output_dir(cfg) / day
@@ -190,9 +202,9 @@ def process_clip(clip, key, state, cfg, override=None):
         if (out_dir / stale).exists():
             (TOSSED / day).mkdir(parents=True, exist_ok=True)
             shutil.move(str(out_dir / stale), str(TOSSED / day / stale))
-    (out_dir / f"{clip.stem}_caption.txt").write_text(caption_for(tags, clip.stem), encoding="utf-8")
+    (out_dir / f"{clip.stem}_caption.txt").write_text(caption_for(tags, clip.stem, game), encoding="utf-8")
     state[key] = {
-        "done": datetime.now().isoformat(timespec="seconds"), "outputs": outputs, "tagged": bool(tags),
+        "done": datetime.now().isoformat(timespec="seconds"), "outputs": outputs, "tagged": bool(tags), "game": game,
         "dir": day, "length": round(length, 1), "start": round(start, 2), "end": round(start + length, 2),
         "src_duration": round(duration, 2), "labels": [lbl for lbl, _ in overlays],
         "title": (tags or {}).get("title", ""), "champion": (tags or {}).get("champion", ""),
@@ -200,6 +212,12 @@ def process_clip(clip, key, state, cfg, override=None):
     }
     what = " + ".join(lbl for lbl, _ in overlays) or "untagged"
     log(f"OK   {key} ({what}, {length:.0f}s of {duration:.0f}s) -> {', '.join(outputs)} in {time.time() - t0:.0f}s")
+
+
+def reel_game(entries):
+    """The game every short in a reel is from, or None for a mixed reel (which gets no game hashtags)."""
+    games = {e.get("game", "league") for e in entries}   # shorts from before game support are all League
+    return games.pop() if len(games) == 1 else None
 
 
 def make_reel(req, state, cfg):
@@ -233,10 +251,13 @@ def make_reel(req, state, cfg):
     move_in(tmp, out_root / day / tmp.name)
     labels = [lbl for p in picks for lbl in p[2].get("labels", [])]
     title = f"Highlight reel: {len(picks)} plays"
+    game = reel_game([p[2] for p in picks])
+    hashtags = GAMES[game]["hashtags"] + " " if game in GAMES else ""
     (out_root / day / f"{stem}_caption.txt").write_text(
-        f"{title}\n\n#leagueoflegends #lol #gaming #highlights #shorts\n", encoding="utf-8")
+        f"{title}\n\n{hashtags}#gaming #highlights #shorts\n", encoding="utf-8")
     key = f"reel:{req['id']}"
     state[key] = {"done": stamp.isoformat(timespec="seconds"), "outputs": [tmp.name], "tagged": False, "reel": True,
+                  "game": game,
                   "dir": day, "length": round(sum(p[2].get("length") or 0 for p in picks), 1), "labels": labels,
                   "title": title, "champion": "", "sources": [p[1] for p in picks]}
     log(f"REEL {key}: {len(picks)} shorts ({style}) -> {tmp.name}")
