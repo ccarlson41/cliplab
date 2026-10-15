@@ -56,10 +56,13 @@ if ($InstallObs -and -not (Test-Path "$env:ProgramFiles\obs-studio")) {
 }
 
 Step 3 'Config'
-New-Item -ItemType Directory -Force $Home2, $WatchDir, $OutputDir | Out-Null
+New-Item -ItemType Directory -Force $Home2 | Out-Null
 $config = Join-Path $Home2 'config.json'
 if ((Test-Path $config) -and -not $Force) {
   Write-Host "  Keeping your existing $config (use -Force to replace it)."
+  if ($PSBoundParameters.ContainsKey('WatchDir') -or $PSBoundParameters.ContainsKey('OutputDir')) {
+    Write-Host '  -WatchDir and -OutputDir only apply to a new config: edit config.json, or rerun with -Force.' -ForegroundColor Yellow
+  }
   if ($PSBoundParameters.ContainsKey('Game')) {
     $cfg = Get-Content $config -Raw | ConvertFrom-Json
     $cfg | Add-Member -NotePropertyName game -NotePropertyValue $Game -Force
@@ -68,6 +71,7 @@ if ((Test-Path $config) -and -not $Force) {
     Write-Host "  Game set to $Game."
   }
 } else {
+  New-Item -ItemType Directory -Force $WatchDir, $OutputDir | Out-Null
   $cfg = [ordered]@{ watch_dir = (Resolve-Path $WatchDir).Path; output_dir = (Resolve-Path $OutputDir).Path; allow_lan = [bool]$AllowLan; game = $Game }
   if ($Game -ne 'league') { $cfg.tag_wait = 0 }   # only the League auto-clipper writes tag files
   [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json), $Utf8)
@@ -85,9 +89,13 @@ if (-not $NoStartup) {
 Step 5 'Starting ClipLab'
 Start-Process $pyw -ArgumentList '-3 -m cliplab' -WorkingDirectory $Repo
 Start-Sleep 4
-$port = (Get-Content $config -Raw | ConvertFrom-Json).port; if (-not $port) { $port = 8765 }
+# report what the config says (an update keeps the folders picked at install), with ClipLab's own defaults
+$saved = Get-Content $config -Raw | ConvertFrom-Json
+$port = $saved.port; if (-not $port) { $port = 8765 }
+$watch = $saved.watch_dir; if (-not $watch) { $watch = Join-Path $Home2 'Inbox' }
+$shorts = $saved.output_dir; if (-not $shorts) { $shorts = Join-Path $Home2 'Ready' }
 Write-Host ''
 Write-Host "ClipLab is running: http://localhost:$port" -ForegroundColor Green
-Write-Host "  Raw clips:  $WatchDir   (point OBS's replay buffer here)"
-Write-Host "  Shorts:     $OutputDir"
-if ($AllowLan) { Write-Host '  Other devices: allow Python through Windows Firewall on Private networks, then use this PC''s IP.' }
+Write-Host "  Raw clips:  $watch   (point OBS's replay buffer here)"
+Write-Host "  Shorts:     $shorts"
+if ($saved.allow_lan) { Write-Host '  Other devices: allow Python through Windows Firewall on Private networks, then use this PC''s IP.' }
