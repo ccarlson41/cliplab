@@ -131,7 +131,7 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
 .field label { font-weight: 600; }
 .field .row { display: flex; gap: 10px; align-items: center; }
 .field input[type="range"] { flex: 1; accent-color: var(--sun); }
-.field input[type="text"], .field input[type="number"] { font: 13px var(--body); padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--fg); width: 100%; }
+.field input[type="text"], .field input[type="number"], .field select { font: 13px var(--body); padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--fg); width: 100%; }
 .field output { font: 12px var(--mono); min-width: 52px; text-align: right; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 480px) { .two { grid-template-columns: 1fr; } }
@@ -230,6 +230,9 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
   <form class="form" id="settingsForm">
     <h3>Settings</h3>
     <p class="hint" style="margin:0">Applies to new clips. To update an older short, open it and choose Re-render.</p>
+    <div class="field"><label for="s_game">Game</label>
+      <select id="s_game"></select>
+      <span class="hint">Sets the hashtags in captions. Clips from the League auto-clipper always count as League. Only League has an auto-clipper, so other games don't wait for a tag file.</span></div>
     <div class="field"><label>Versions to make</label>
       <div class="row"><label><input type="checkbox" id="s_blur" value="blur"> Blur fill</label><label><input type="checkbox" id="s_crop" value="crop"> Center crop</label></div></div>
     <div class="field"><label for="s_watermark">Watermark</label>
@@ -365,7 +368,7 @@ function render() {
   $("groups").innerHTML = html;
   $("empty").hidden = shown.length > 0;
   $("empty").textContent = ready.length === 0
-    ? "No shorts yet. Play a game with OBS's replay buffer running and save a replay (or let the auto-clipper catch a big play); shorts show up here about a minute later."
+    ? `No shorts yet. Play a game with OBS's replay buffer running and save a replay${(s.config || {}).game === "league" ? " (or let the auto-clipper catch a big play)" : " right after a big play"}; shorts show up here about a minute later.`
     : filter === "kept" ? "Nothing kept yet. Open a short and press Keep (or K)." : label ? "No shorts with that play in this view." : "All caught up. Every short has been kept or tossed.";
 
   for (const r of s.results || []) {
@@ -382,7 +385,7 @@ function fillSheet(loadVideo) {
   if (!c) { if ($("sheet").open) $("sheet").close(); return; }
   const v = vid(c);
   $("sTitle").textContent = nice(c);
-  $("sSub").textContent = [when(c.time), c.champion, c.length ? Math.round(c.length) + " s" : "", c.trimmed ? "re-cut" : ""].filter(Boolean).join(" · ");
+  $("sSub").textContent = [when(c.time), c.game, c.champion, c.length ? Math.round(c.length) + " s" : "", c.trimmed ? "re-cut" : ""].filter(Boolean).join(" · ");
   $("seg").innerHTML = Object.keys(c.videos).map((k, i) => `<button type="button" data-s="${k}" aria-pressed="${k === v}">${k === "blur" ? "Blur fill" : "Center crop"} <kbd>${i + 1}</kbd></button>`).join("");
   $("dl").href = `/media/${encodeURI(c.videos[v])}?dl=1`;
   $("sCaption").textContent = c.caption || "(no caption file)";
@@ -438,6 +441,8 @@ async function copyCaption() {
 /* ---------- settings ---------- */
 function openSettings() {
   const c = state.config || {};
+  $("s_game").innerHTML = Object.entries(state.games || {}).map(([k, name]) => `<option value="${esc(k)}">${esc(name)}</option>`).join("");
+  $("s_game").value = c.game;
   $("s_blur").checked = (c.styles || []).includes("blur"); $("s_crop").checked = (c.styles || []).includes("crop");
   $("s_watermark").value = c.watermark || "";
   for (const k of NUM_FIELDS) $("s_" + k).value = c[k];
@@ -514,10 +519,14 @@ document.addEventListener("keydown", e => {
 $("openSettings").addEventListener("click", openSettings);
 $("closeSettings").addEventListener("click", () => $("settings").close());
 $("cancelSettings").addEventListener("click", () => $("settings").close());
+$("s_game").addEventListener("change", e => {   // only League's auto-clipper writes tag files
+  if (e.target.value !== "league") $("s_tag_wait").value = 0;
+  else if (Number($("s_tag_wait").value) === 0) $("s_tag_wait").value = 20;
+});
 $("s_blur_zoom").addEventListener("input", e => { $("o_blur_zoom").textContent = Math.round(e.target.value * 100) + "%"; });
 $("settingsForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const body = { styles: ["blur", "crop"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value };
+  const body = { game: $("s_game").value, styles: ["blur", "crop"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value };
   for (const k of NUM_FIELDS) body[k] = Number($("s_" + k).value);
   const r = await post("/api/config", body);
   if (r) { toast("Settings saved"); $("settings").close(); refresh(); }

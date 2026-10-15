@@ -9,16 +9,22 @@
 .EXAMPLE
   # Also let your phone / other PCs on your home network open the app
   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips -AllowLan
+
+.EXAMPLE
+  # Rainbow Six Siege player: Siege captions, and no waiting for League auto-clipper tag files
+  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips -Game r6
 #>
 param(
   [string]$WatchDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'Replays'),
   [string]$OutputDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'ClipLab Shorts'),
+  [ValidateSet('league', 'r6')][string]$Game = 'league',
   [switch]$AllowLan,
   [switch]$InstallObs,
   [switch]$NoStartup,
   [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
+$Game = $Game.ToLower()   # ValidateSet lets "R6" through; ClipLab's keys are lowercase
 $Repo = Split-Path $PSScriptRoot -Parent
 $Home2 = if ($env:CLIPLAB_HOME) { $env:CLIPLAB_HOME } else { Join-Path $env:USERPROFILE 'ClipLab' }
 $Utf8 = New-Object Text.UTF8Encoding $false
@@ -54,8 +60,16 @@ New-Item -ItemType Directory -Force $Home2, $WatchDir, $OutputDir | Out-Null
 $config = Join-Path $Home2 'config.json'
 if ((Test-Path $config) -and -not $Force) {
   Write-Host "  Keeping your existing $config (use -Force to replace it)."
+  if ($PSBoundParameters.ContainsKey('Game')) {
+    $cfg = Get-Content $config -Raw | ConvertFrom-Json
+    $cfg | Add-Member -NotePropertyName game -NotePropertyValue $Game -Force
+    if ($Game -ne 'league') { $cfg | Add-Member -NotePropertyName tag_wait -NotePropertyValue 0 -Force }
+    [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json -Depth 5), $Utf8)
+    Write-Host "  Game set to $Game."
+  }
 } else {
-  $cfg = [ordered]@{ watch_dir = (Resolve-Path $WatchDir).Path; output_dir = (Resolve-Path $OutputDir).Path; allow_lan = [bool]$AllowLan }
+  $cfg = [ordered]@{ watch_dir = (Resolve-Path $WatchDir).Path; output_dir = (Resolve-Path $OutputDir).Path; allow_lan = [bool]$AllowLan; game = $Game }
+  if ($Game -ne 'league') { $cfg.tag_wait = 0 }   # only the League auto-clipper writes tag files
   [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json), $Utf8)
 }
 Push-Location $Repo

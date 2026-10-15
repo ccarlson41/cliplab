@@ -28,6 +28,10 @@ WEB = PACKAGE / "web"
 VIDEO_EXT = {".mp4", ".mkv", ".mov"}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW for subprocesses on Windows
 ALL_STYLES = ("blur", "crop")
+GAMES = {                             # games ClipLab knows: display name (as in tag files) and caption hashtags
+    "league": {"name": "League of Legends", "hashtags": "#leagueoflegends #lol"},
+    "r6": {"name": "Rainbow Six Siege", "hashtags": "#rainbowsixsiege #r6siege #r6"},
+}
 
 DEFAULTS = {
     # --- folders and machine setup (edit config.json by hand or rerun setup) ---
@@ -45,6 +49,7 @@ DEFAULTS = {
         "shorts_path": "",                 # where finished shorts land on the peer (shown in the app)
     },
     # --- render settings (editable from the app) ---
+    "game": "league",                      # a key of GAMES; a tag file naming its game overrides it per clip
     "styles": ["blur", "crop"],
     "lead_in": 4.0,
     "tail": 3.0,
@@ -57,8 +62,8 @@ DEFAULTS = {
     "tag_wait": 20,
     "recycle_tossed_after_days": 14,
 }
-APP_EDITABLE = ("styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark", "crf",
-                "maxrate_mbps", "tag_wait", "recycle_tossed_after_days")
+APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
+                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days")
 LIMITS = {
     "lead_in": (0, 15), "tail": (0, 15), "min_seconds": (3, 60), "max_seconds": (10, 180),
     "blur_zoom": (0.4, 1.0), "crf": (16, 30), "maxrate_mbps": (2, 20), "tag_wait": (0, 120),
@@ -89,6 +94,8 @@ def load_config():
             cfg["peer"].update({k: v for k, v in value.items() if k in DEFAULTS["peer"]})
         elif key in DEFAULTS:
             cfg[key] = value
+    game = str(cfg["game"]).lower()   # hand edits like "R6" still count; anything unknown means League
+    cfg["game"] = game if game in GAMES else DEFAULTS["game"]
     return cfg
 
 
@@ -132,6 +139,10 @@ def clean_config(changes):
             if not styles:
                 return cfg, "Pick at least one version to render."
             cfg[key] = styles
+        elif key == "game":
+            if not isinstance(value, str) or value not in GAMES:
+                return cfg, f"Unknown game: {value}"
+            cfg[key] = value
         elif key == "watermark":
             cfg[key] = "".join(c for c in str(value) if c.isalnum() or c in " @._-#")[:40].strip()
         else:

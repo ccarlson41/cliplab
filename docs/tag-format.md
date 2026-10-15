@@ -36,8 +36,9 @@ Write it to a temporary name and rename it into place, so ClipLab never reads ha
 | `events[].secondsBeforeEnd` | **Required.** How many seconds before the end of the clip the event happened. Measure it in wall-clock time, from when the event was seen to when the save was requested; don't map game time to video time. |
 | `events[].label` | Text drawn on screen at that moment. Uppercased; only letters, digits and spaces are kept. Suggested labels: DOUBLE KILL, TRIPLE KILL, QUADRA KILL, PENTAKILL, ACE, FIRST BLOOD, BARON STEAL, DRAGON STEAL, HERALD STEAL. |
 | `title` | First line of the caption file. |
-| `champion` | Adds a champion hashtag to the caption and shows in the app. May be empty. |
-| `version`, `game`, `savedAt`, `bufferSeconds`, `player`, `events[].type`, `events[].gameTime` | Not used yet. Keep them; new fields should only ever be added. |
+| `game` | Picks the caption hashtags when it's a game ClipLab knows (`League of Legends`, `Rainbow Six Siege`); otherwise the game in settings is used. |
+| `champion` | Who you played (champion, operator…). Adds a hashtag to the caption and shows in the app. May be empty. |
+| `version`, `savedAt`, `bufferSeconds`, `player`, `events[].type`, `events[].gameTime` | Not used yet. Keep them; new fields should only ever be added. |
 
 ## How ClipLab trims
 - Start: `lead_in` seconds (default 4) before the earliest event.

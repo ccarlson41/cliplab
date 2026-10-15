@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from .settings import (CONFIG, DECISIONS, FAILED, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
+from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
                        TOSSED, VIDEO_EXT, WEB, clean_config, load_config, output_dir, read_json, tool, watch_dir,
                        write_json)
 
@@ -134,6 +134,7 @@ def build_state():
         stem = stem_of(entry)
         caption_path = out / day / f"{stem}_caption.txt"
         labels = entry.get("labels") or []
+        game = GAMES.get(entry.get("game", "league"))   # shorts from before game support are all League
         is_reel = bool(entry.get("reel"))
         raw = None if is_reel else watch / key
         paths = {}
@@ -149,6 +150,7 @@ def build_state():
             "time": entry.get("done") if is_reel else recorded_at(key, entry.get("done")), "day": day,
             "videos": videos, "length": entry.get("length"), "labels": labels,
             "title": entry.get("title") or "", "champion": entry.get("champion") or "",
+            "game": game["name"] if game else "",
             "caption": caption_path.read_text(encoding="utf-8") if caption_path.exists() else "",
             "start": entry.get("start"), "end": entry.get("end"), "src_duration": entry.get("src_duration"),
             "raw": quote(key.replace("\\", "/")) if raw and raw.exists() else None,
@@ -170,7 +172,8 @@ def build_state():
                                                           "allow_lan")}
     return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
             "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
-            "results": results, "queue": len(pending), "now": datetime.now().isoformat(timespec="seconds")}
+            "games": {k: g["name"] for k, g in GAMES.items()}, "results": results, "queue": len(pending),
+            "now": datetime.now().isoformat(timespec="seconds")}
 
 
 def inside(base, rel):
