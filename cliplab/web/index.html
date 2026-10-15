@@ -8,7 +8,7 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#111214">
 <style>
-/* Layout: status bar + stats strip, an "on the way" lane, then shorts grouped by game session; a player sheet with a trim editor, and a settings sheet */
+/* Layout: status bar + stats strip, an "on the way" lane, then shorts grouped by game session; a player sheet with a trim editor, a settings sheet, and a Getting started guide */
 :root {
   --bg: #111214; --panel: #191a1d; --raise: #212226; --fg: #e6e4df; --muted: #8d8b86; --line: #2b2d31;
   --sun: #c38a63; --ok: #7fb58f; --warn: #d3b35e; --bad: #d48b7a;
@@ -135,6 +135,21 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
 .field output { font: 12px var(--mono); min-width: 52px; text-align: right; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 480px) { .two { grid-template-columns: 1fr; } }
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.checklist li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; }
+.checklist b { font-weight: 600; }
+.checklist .st { display: block; font-size: 14px; }
+.checklist p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.checklist p b { color: var(--fg); }
+.checklist a { color: var(--sun); }
+.mark { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font: 600 12px var(--mono); color: var(--muted); }
+.mark.ok { background: var(--ok); border-color: var(--ok); color: #111214; }
+.mark.warn { border-color: var(--warn); color: var(--warn); }
+.mark.bad { border-color: var(--bad); color: var(--bad); }
+.status { display: flex; gap: 7px; align-items: center; margin-top: 5px; font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.status.ok { color: var(--ok); } .status.warn { color: var(--warn); } .status.bad { color: var(--bad); }
+.copyrow { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.copyrow code { flex: 1; min-width: 0; font: 12px var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; overflow-wrap: anywhere; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 5px; font-size: 13px; z-index: 10; max-width: calc(100vw - 32px); }
 .toast.bad { background: var(--bad); color: #111214; }
 @media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
@@ -250,8 +265,19 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
       <div class="field"><label for="s_tag_wait">Wait for tag file (s)</label><input type="number" id="s_tag_wait" min="0" max="120" step="1"></div>
       <div class="field"><label for="s_recycle_tossed_after_days">Recycle tossed after (days)</label><input type="number" id="s_recycle_tossed_after_days" min="1" max="365" step="1"></div>
     </div>
-    <div class="actions"><button class="btn primary" type="submit">Save settings</button><button class="btn" type="button" id="cancelSettings">Cancel</button></div>
+    <div class="actions"><button class="btn primary" type="submit">Save settings</button><button class="btn" type="button" id="cancelSettings">Cancel</button>
+      <button class="btn" type="button" id="openGuide" style="margin-left:auto">Getting started guide</button></div>
   </form>
+</dialog>
+
+<dialog id="guide" aria-label="Getting started">
+  <button class="close" id="closeGuide" aria-label="Close">×</button>
+  <div class="form">
+    <h3>Getting started</h3>
+    <p class="hint" style="margin:0">A few OBS settings, then a quick test. The checks update after you press Apply or OK in OBS's settings.</p>
+    <ol class="checklist" id="gSteps"></ol>
+    <div class="actions"><button class="btn primary" type="button" id="gDone">I'm all set</button><button class="btn" type="button" id="gLater">Later</button></div>
+  </div>
 </dialog>
 
 <script>
@@ -259,6 +285,7 @@ const $ = id => document.getElementById(id);
 const NUM_FIELDS = ["blur_zoom", "lead_in", "tail", "min_seconds", "max_seconds", "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days"];
 let state = { clips: [], stats: {}, config: {}, results: [] };
 let filter = "new", label = "", style = "blur", open = null, trim = null, seenResults = null, order = [];
+let guide = { data: null, testFrom: null, html: "", timer: null, shown: false };
 try { filter = localStorage.getItem("cl-filter") || "new"; style = localStorage.getItem("cl-style") || "blur"; } catch (e) {}
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -376,6 +403,7 @@ function render() {
   }
   seenResults = new Set((s.results || []).map(r => r.id));
   if (open) fillSheet(false);
+  if (s.setup_needed && !guide.shown && !document.querySelector("dialog[open]")) openGuide();
 }
 
 /* ---------- player sheet ---------- */
@@ -429,14 +457,14 @@ async function decide(decision) {
     nextKey ? openSheet(nextKey) : $("sheet").close();
   } else await refresh();
 }
-async function copyCaption() {
-  const text = $("sCaption").textContent;
-  try { await navigator.clipboard.writeText(text); toast("Caption copied"); return; } catch (e) {}
+async function copyText(text, what, host) {
+  try { await navigator.clipboard.writeText(text); toast(what + " copied"); return; } catch (e) {}
   const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-  $("sheet").appendChild(ta); ta.select();
+  host.appendChild(ta); ta.select();
   const ok = document.execCommand && document.execCommand("copy"); ta.remove();
-  toast(ok ? "Caption copied" : "Select the caption text and copy it");
+  toast(ok ? what + " copied" : `Select the ${what.toLowerCase()} text and copy it`);
 }
+const copyCaption = () => copyText($("sCaption").textContent, "Caption", $("sheet"));
 
 /* ---------- settings ---------- */
 function openSettings() {
@@ -448,6 +476,53 @@ function openSettings() {
   for (const k of NUM_FIELDS) $("s_" + k).value = c[k];
   $("o_blur_zoom").textContent = Math.round(c.blur_zoom * 100) + "%";
   $("settings").showModal();
+}
+
+/* ---------- getting started ---------- */
+async function openGuide() {
+  guide.shown = true; guide.testFrom = null; guide.html = "";
+  if (!$("guide").open) $("guide").showModal();
+  await pollGuide();
+  clearInterval(guide.timer); guide.timer = setInterval(pollGuide, 2000);
+}
+async function pollGuide() {
+  try { const r = await fetch("/api/setup", { cache: "no-store" }); guide.data = await r.json(); drawGuide(); } catch (e) {}
+}
+function guideSteps(d) {
+  const o = d.obs || {}, keys = (o.hotkeys || []).join(" or "), steps = [];
+  if (!o.installed) steps.push({ title: "Install OBS Studio", status: ["bad", "OBS isn't installed on this PC"],
+    body: `It's free from <a href="https://obsproject.com/download" target="_blank" rel="noopener">obsproject.com</a>. Install it, open it once, then come back here.` });
+  steps.push({ title: "Turn on the replay buffer",
+    body: "In OBS, open <b>Settings → Output</b> (in Advanced mode, the <b>Replay Buffer</b> tab). Tick <b>Enable Replay Buffer</b> and set <b>Maximum Replay Time</b> to 45–60 seconds."
+      + (o.same_as_stream ? " First set <b>Recording Quality</b> to <b>High Quality, Medium File Size</b>: OBS hides the replay buffer while it's \"Same as stream\"." : ""),
+    status: o.replay_buffer == null ? null : o.same_as_stream ? ["warn", "Recording Quality is \"Same as stream\""]
+      : !o.replay_buffer ? ["", "Off"] : o.replay_seconds < 45 ? ["warn", `On, but only ${o.replay_seconds} s`] : ["ok", `On, ${o.replay_seconds} s`] });
+  steps.push({ title: "Save replays to ClipLab's folder", copy: d.watch_dir,
+    body: "In <b>Settings → Output</b>, set <b>Recording Path</b> to this folder:",
+    status: o.path_ok == null ? null : o.path_ok ? ["ok", "OBS saves here"] : ["warn", `OBS saves to ${o.path}`] });
+  steps.push({ title: "Give Save Replay a hotkey",
+    body: "In <b>Settings → Hotkeys</b>, find <b>Save Replay</b> under Replay Buffer, click its box and press a key you don't use in game (F12 works well).",
+    status: o.hotkeys == null ? null : o.hotkeys.length ? ["ok", `Save Replay: ${keys}`] : ["", "No hotkey yet"] });
+  steps.push({ title: "Start the replay buffer",
+    body: "Click <b>Start Replay Buffer</b> under Controls (bottom right of OBS). OBS doesn't remember it, so do this each time you open OBS.",
+    status: d.obs_running == null ? null : d.obs_running ? ["", "OBS is open"] : ["", "OBS isn't open right now"] });
+  const got = guide.testFrom != null && d.latest && d.latest.mtime >= guide.testFrom - 1;
+  steps.push({ title: "Save a replay to test it", test: true,
+    body: guide.testFrom == null ? "When the steps above are done, start the test and save a replay."
+      : got ? "That's it. Your first short shows up on this page in about a minute."
+      : `Press ${keys ? "<b>" + esc(keys) + "</b>" : "your Save Replay hotkey"} now (or Save Replay in OBS's Controls).`,
+    status: guide.testFrom == null ? null : got ? ["ok", `Got ${d.latest.name}`] : ["busy", "Waiting for a replay in the folder…"] });
+  return steps;
+}
+function drawGuide() {
+  const html = guideSteps(guide.data).map((s, i) => {
+    const cls = s.status ? s.status[0] : "", mark = cls === "ok" ? "✓" : cls === "warn" ? "!" : cls === "bad" ? "×" : i + 1;
+    return `<li><span class="mark ${cls === "busy" ? "" : cls}">${mark}</span><div><b class="st">${s.title}</b><p>${s.body}</p>
+      ${s.copy ? `<div class="copyrow"><code>${esc(s.copy)}</code><button class="btn small" type="button" data-g="copy">Copy</button></div>` : ""}
+      ${s.status ? `<div class="status ${cls}">${cls === "busy" ? '<span class="dot busy"></span>' : ""}${esc(s.status[1])}</div>` : ""}
+      ${s.test && guide.testFrom == null ? `<div class="actions" style="margin-top:8px"><button class="btn small primary" type="button" data-g="test">Start the test</button></div>` : ""}</div></li>`;
+  }).join("");
+  if (html !== guide.html) { $("gSteps").innerHTML = html; guide.html = html; }   // redraw only on change, so focus isn't lost
 }
 
 /* ---------- data ---------- */
@@ -517,6 +592,18 @@ document.addEventListener("keydown", e => {
   e.preventDefault();
 });
 $("openSettings").addEventListener("click", openSettings);
+$("openGuide").addEventListener("click", () => { $("settings").close(); openGuide(); });
+$("gSteps").addEventListener("click", e => {
+  const b = e.target.closest("[data-g]"); if (!b || !guide.data) return;
+  if (b.dataset.g === "copy") copyText(guide.data.watch_dir, "Folder", $("guide"));
+  if (b.dataset.g === "test") { guide.testFrom = guide.data.now; drawGuide(); pollGuide(); }
+});
+$("guide").addEventListener("close", () => clearInterval(guide.timer));
+$("closeGuide").addEventListener("click", () => $("guide").close());
+$("gLater").addEventListener("click", () => $("guide").close());
+$("gDone").addEventListener("click", async () => {
+  if (await post("/api/setup/done", {})) { $("guide").close(); toast("You're set up. Go make some plays!"); refresh(); }
+});
 $("closeSettings").addEventListener("click", () => $("settings").close());
 $("cancelSettings").addEventListener("click", () => $("settings").close());
 $("s_game").addEventListener("change", e => {   // only League's auto-clipper writes tag files
