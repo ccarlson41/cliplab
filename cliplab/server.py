@@ -234,6 +234,26 @@ def decide(key, decision):
     write_json(DECISIONS, decisions)
 
 
+def cross_site(headers):
+    """Why a POST looks like it came from another website, or None if it's from ClipLab's own page.
+
+    Any page open in the same browser can POST to localhost, so ClipLab asks for two things its own page
+    always sends: a JSON Content-Type (another site can't send one without a CORS preflight, which this
+    server never approves) and an Origin, or failing that a Referer, naming the address the app is open on.
+    Requests with neither header (curl, scripts on this PC) are let through on the Content-Type alone."""
+    if (headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+        return "ClipLab only takes JSON requests."
+    origin = headers.get("Origin")
+    if origin is None:
+        origin = headers.get("Referer")
+    if origin is None:
+        return None
+    sent, host = urlparse(origin.strip()), (headers.get("Host") or "").strip().lower()
+    if sent.scheme not in ("http", "https") or not host or sent.netloc.lower() != host:
+        return "ClipLab only takes requests from its own page."
+    return None
+
+
 def queue_job(job):
     REQUESTS.mkdir(parents=True, exist_ok=True)
     job["id"] = uuid.uuid4().hex[:8]
@@ -331,6 +351,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.local_only():
             return
+        refused = cross_site(self.headers)
+        if refused:
+            return self.send_json({"error": refused}, 403)
         route = urlparse(self.path).path
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
