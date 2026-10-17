@@ -147,6 +147,23 @@ class RenderTests(unittest.TestCase):
                 self.assertAlmostEqual(duration, length, delta=0.2)
                 self.assertTrue(has_audio)
 
+    def test_webcam_on_top_is_full_size_with_audio(self):
+        cfg = dict(CFG, styles=["cam"], ffmpeg=FF_DIR)
+        ffmpeg = engine.tool("ffmpeg", cfg)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = tmp / "Replay cam.mp4"
+            subprocess.run([str(ffmpeg), "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=d=4:s=1280x720:r=30",
+                            "-f", "lavfi", "-i", "sine=d=4", "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+                            "-c:a", "aac", str(src)], check=True, creationflags=NO_WINDOW)
+            names = engine.render(src, tmp / "out", src.stem, 0, 4, True, [("ACE", 1)], cfg, [0, 0.75, 0.25, 0.25])
+            self.assertEqual(names, ["Replay cam_cam.mp4"])
+            size = subprocess.run([str(engine.tool("ffprobe", cfg)), "-v", "error", "-select_streams", "v:0",
+                                   "-show_entries", "stream=width,height", "-of", "csv=p=0", str(tmp / "out" / names[0])],
+                                  capture_output=True, text=True, creationflags=NO_WINDOW).stdout.strip()
+            self.assertEqual(size, "1080,1920")
+            self.assertTrue(engine.probe(tmp / "out" / names[0], cfg)[1])
+
 
 def tearDownModule():
     shutil.rmtree(_home, ignore_errors=True)

@@ -9,6 +9,7 @@ Each clip becomes 1080x1920 shorts in one ffmpeg pass (one decode, one file per
 enabled style) plus a caption file, in output_dir/<date>/:
   <name>_blur.mp4  the fight in the middle, blurred copy filling the frame
   <name>_crop.mp4  tight center crop that fills the phone screen
+  <name>_cam.mp4   your webcam on top, gameplay below (when the app has placed a webcam in OBS)
 Originals are never touched.
 
 If a tag file sits next to the clip (<clip>.json, see docs/tag-format.md), the
@@ -17,15 +18,17 @@ are re-read for every job.
 """
 import json
 import shutil
+import threading
 import subprocess
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+from . import obsctl, obsws, sounds
 from .settings import (FAILED, GAMES, HEARTBEAT, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
                        check_folders, load_config, output_dir, read_json, recycle, tag_path, tool, watch_dir,
-                       write_json)
+                       webcam_rect, write_json)
 
 POLL_SECONDS = 5
 FONT = "C\\:/Windows/Fonts/arialbd.ttf"
@@ -107,7 +110,23 @@ def plan(duration, tags, cfg, override=None):
 
 # ---------- rendering ----------
 
-def style_graph(style, src, out, cfg):
+def cam_height(rect):
+    """Pixels of the 1080x1920 frame the webcam gets in Webcam on top: its own shape, within limits.
+    The rect is a fraction of OBS's canvas, taken to be 16:9."""
+    aspect = (rect[2] * 16) / (rect[3] * 9)
+    return int(round(min(840, max(480, 1080 / aspect)) / 2)) * 2
+
+
+def style_graph(style, src, out, cfg, webcam=None):
+    if style == "cam":
+        x, y, w, h = webcam
+        top = cam_height(webcam)
+        ratio = 1080 / (1920 - top)
+        return (f"[{src}]split=2[{src}c][{src}g];"
+                f"[{src}c]crop=iw*{w:.4f}:ih*{h:.4f}:iw*{x:.4f}:ih*{y:.4f},"
+                f"scale=1080:{top}:force_original_aspect_ratio=increase,crop=1080:{top}[{src}cam];"
+                f"[{src}g]crop='min(iw,ih*{ratio:.4f})':ih,scale=1080:{1920 - top}[{src}game];"
+                f"[{src}cam][{src}game]vstack,setsar=1,format=yuv420p[{out}]")
     if style == "blur":
         z = cfg["blur_zoom"]
         return (f"[{src}]split=2[{src}a][{src}b];"
@@ -119,10 +138,10 @@ def style_graph(style, src, out, cfg):
     return f"[{src}]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920,format=yuv420p[{out}]"
 
 
-def post_filters(overlays, cfg):
+def post_filters(overlays, cfg, label_y="h*0.13"):
     parts = [
         f"drawtext=fontfile='{FONT}':text='{safe_text(label)}':fontsize=104:fontcolor=white:"
-        f"borderw=7:bordercolor=black@0.85:x=(w-text_w)/2:y=h*0.13:"
+        f"borderw=7:bordercolor=black@0.85:x=(w-text_w)/2:y={label_y}:"
         f"enable='between(t,{max(0, at - 0.15):.2f},{at + 2.2:.2f})'"
         for label, at in overlays]
     if cfg.get("watermark"):
@@ -142,14 +161,21 @@ def move_in(tmp, dst):
     shutil.move(str(tmp), str(dst))
 
 
-def render(src, out_dir, stem, start, length, has_audio, overlays, cfg):
+def styles_for(cfg, webcam):
+    """The enabled styles this clip can have: Webcam on top needs to know where the webcam was."""
+    styles = [s for s in cfg["styles"] if s != "cam" or webcam]
+    return styles or ["crop"]
+
+
+def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=None):
     """One ffmpeg pass producing every enabled style. Returns the output file names."""
-    styles = cfg["styles"]
+    styles = styles_for(cfg, webcam)
     n = len(styles)
     graph = ["[0:v]" + (f"split={n}" + "".join(f"[v{i}]" for i in range(n)) if n > 1 else "null[v0]")]
-    post = post_filters(overlays, cfg)
     for i, style in enumerate(styles):
-        graph.append(style_graph(style, f"v{i}", f"{style}raw", cfg))
+        # in Webcam on top, play labels go just under the webcam instead of over your face
+        post = post_filters(overlays, cfg, f"{cam_height(webcam) + 50}" if style == "cam" else "h*0.13")
+        graph.append(style_graph(style, f"v{i}", f"{style}raw", cfg, webcam))
         graph.append(f"[{style}raw]{post or 'null'}[{style}v]")
     if has_audio:
         graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11," +
@@ -186,6 +212,15 @@ def caption_for(tags, fallback, game="league"):
 
 # ---------- jobs ----------
 
+def current_webcam(cfg):
+    """Where the webcam is for a new clip: asked of OBS when it's running here, else the spot the app saved."""
+    if not cfg["webcam"]["rect"]:
+        return None
+    try:
+        return webcam_rect(obsctl.live_webcam_rect())
+    except Exception:  # OBS closed, on another PC, or odd: never let it stop a render
+        return cfg["webcam"]["rect"]
+
 def process_clip(clip, key, state, cfg, override=None):
     t0 = time.time()
     previous = state.get(key, {})
@@ -193,11 +228,12 @@ def process_clip(clip, key, state, cfg, override=None):
     tags = load_tags(clip)
     # a re-cut or re-render keeps the clip's game (shorts from before game support are all League)
     game = previous.get("game", "league") if previous.get("done") else game_of(tags, cfg)
+    webcam = previous.get("webcam") if previous.get("done") else current_webcam(cfg)   # likewise where the webcam was
     start, length, overlays = plan(duration, tags, cfg, override)
     day = previous.get("dir") or datetime.now().strftime("%Y-%m-%d")
     out_dir = output_dir(cfg) / day
-    write_json(STATUS, {"key": key, "styles": cfg["styles"], "started": time.time(), "trim": bool(override)})
-    outputs = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg)
+    write_json(STATUS, {"key": key, "styles": styles_for(cfg, webcam), "started": time.time(), "trim": bool(override)})
+    outputs = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg, webcam)
     for stale in set(previous.get("outputs", [])) - set(outputs):   # a style was switched off since last time
         if (out_dir / stale).exists():
             (TOSSED / day).mkdir(parents=True, exist_ok=True)
@@ -205,6 +241,7 @@ def process_clip(clip, key, state, cfg, override=None):
     (out_dir / f"{clip.stem}_caption.txt").write_text(caption_for(tags, clip.stem, game), encoding="utf-8")
     state[key] = {
         "done": datetime.now().isoformat(timespec="seconds"), "outputs": outputs, "tagged": bool(tags), "game": game,
+        "webcam": webcam,
         "dir": day, "length": round(length, 1), "start": round(start, 2), "end": round(start + length, 2),
         "src_duration": round(duration, 2), "labels": [lbl for lbl, _ in overlays],
         "title": (tags or {}).get("title", ""), "champion": (tags or {}).get("champion", ""),
@@ -333,6 +370,23 @@ def candidates(root):
             yield p
 
 
+def listen_for_saves():
+    """Plays the chosen sound each time OBS on this PC saves a replay. Runs in a thread for as long as the engine."""
+    while True:
+        sound = load_config()["save_sound"]
+        if sound == "off":
+            time.sleep(5)
+            continue
+        try:
+            with obsws.Obs(events=obsws.OUTPUT_EVENTS) as obs:
+                while load_config()["save_sound"] != "off":
+                    event = obs.next_event(timeout=10)
+                    if event and event.get("eventType") == "ReplayBufferSaved":
+                        sounds.play(load_config()["save_sound"])
+        except Exception:  # OBS closed or not started yet (or answered oddly); try again
+            time.sleep(10)
+
+
 def main():
     cfg = load_config()
     problem = check_folders(cfg)
@@ -344,6 +398,7 @@ def main():
     state = read_json(STATE, {})
     STATUS.unlink(missing_ok=True)
     backfill(state, cfg)
+    threading.Thread(target=listen_for_saves, daemon=True).start()
     sizes, stable = {}, {}   # size seen last poll / when it became stable (gives the tag file time to arrive)
     last_cleanup = 0.0
     log(f"ClipLab engine watching {watch_dir(cfg)} -> {output_dir(cfg)}")

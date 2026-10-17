@@ -148,6 +148,18 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
 .mark.bad { border-color: var(--bad); color: var(--bad); }
 .status { display: flex; gap: 7px; align-items: center; margin-top: 5px; font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 .status.ok { color: var(--ok); } .status.warn { color: var(--warn); } .status.bad { color: var(--bad); }
+.settabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.settabs button { font: 600 13px var(--body); padding: 8px 12px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; margin-bottom: -1px; }
+.settabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--sun); }
+.pane { display: grid; gap: 16px; }
+.swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+.swatches label { position: relative; display: grid; justify-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.swatches input { position: absolute; opacity: 0; pointer-events: none; }
+.swatches span { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--raise); box-shadow: 0 0 0 1px var(--line); }
+.swatches input:checked + span { box-shadow: 0 0 0 2px var(--fg); }
+.swatches input:focus-visible + span { outline: 2px solid var(--sun); outline-offset: 3px; }
+.obs-status { font: 12px var(--mono); color: var(--muted); display: flex; gap: 7px; align-items: baseline; overflow-wrap: anywhere; }
+.field .row select { flex: 1; min-width: 0; }
 .copyrow { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .copyrow code { flex: 1; min-width: 0; font: 12px var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; overflow-wrap: anywhere; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 5px; font-size: 13px; z-index: 10; max-width: calc(100vw - 32px); }
@@ -244,29 +256,78 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
   <button class="close" id="closeSettings" aria-label="Close">×</button>
   <form class="form" id="settingsForm">
     <h3>Settings</h3>
-    <p class="hint" style="margin:0">Applies to new clips. To update an older short, open it and choose Re-render.</p>
-    <div class="field"><label for="s_game">Game</label>
-      <select id="s_game"></select>
-      <span class="hint">Sets the hashtags in captions. Clips from the League auto-clipper always count as League. Only League has an auto-clipper, so other games don't wait for a tag file.</span></div>
-    <div class="field"><label>Versions to make</label>
-      <div class="row"><label><input type="checkbox" id="s_blur" value="blur"> Blur fill</label><label><input type="checkbox" id="s_crop" value="crop"> Center crop</label></div></div>
-    <div class="field"><label for="s_watermark">Watermark</label>
-      <input type="text" id="s_watermark" maxlength="40" placeholder="@yourhandle (leave empty for none)"></div>
-    <div class="field"><label for="s_blur_zoom">Gameplay size in Blur fill</label>
-      <div class="row"><input type="range" id="s_blur_zoom" min="0.4" max="1" step="0.02"><output id="o_blur_zoom"></output></div>
-      <span class="hint">Further left shows the fight bigger but crops more of the sides.</span></div>
-    <div class="two">
-      <div class="field"><label for="s_lead_in">Seconds before the play</label><input type="number" id="s_lead_in" min="0" max="15" step="0.5"></div>
-      <div class="field"><label for="s_tail">Seconds after the play</label><input type="number" id="s_tail" min="0" max="15" step="0.5"></div>
-      <div class="field"><label for="s_min_seconds">Shortest short (s)</label><input type="number" id="s_min_seconds" min="3" max="60" step="1"></div>
-      <div class="field"><label for="s_max_seconds">Longest short (s)</label><input type="number" id="s_max_seconds" min="10" max="180" step="1"></div>
-      <div class="field"><label for="s_crf">Quality (16 best, 30 smallest)</label><input type="number" id="s_crf" min="16" max="30" step="1"></div>
-      <div class="field"><label for="s_maxrate_mbps">Max bitrate (Mbps)</label><input type="number" id="s_maxrate_mbps" min="2" max="20" step="1"></div>
-      <div class="field"><label for="s_tag_wait">Wait for tag file (s)</label><input type="number" id="s_tag_wait" min="0" max="120" step="1"></div>
-      <div class="field"><label for="s_recycle_tossed_after_days">Recycle tossed after (days)</label><input type="number" id="s_recycle_tossed_after_days" min="1" max="365" step="1"></div>
+    <div class="settabs" role="tablist" id="setTabs">
+      <button type="button" role="tab" data-pane="shorts" aria-selected="true">Shorts</button>
+      <button type="button" role="tab" data-pane="look" aria-selected="false">Look</button>
+      <button type="button" role="tab" data-pane="obs" aria-selected="false">OBS</button>
+      <button type="button" role="tab" data-pane="more" aria-selected="false">More</button>
     </div>
-    <div class="actions"><button class="btn primary" type="submit">Save settings</button><button class="btn" type="button" id="cancelSettings">Cancel</button>
-      <button class="btn" type="button" id="openGuide" style="margin-left:auto">Getting started guide</button></div>
+
+    <div class="pane" data-pane="shorts" role="tabpanel">
+      <p class="hint" style="margin:0">Applies to new clips. To update an older short, open it and choose Re-render.</p>
+      <div class="field"><label for="s_game">Game</label>
+        <select id="s_game"></select>
+        <span class="hint">Sets the hashtags in captions. Clips from the League auto-clipper always count as League. Only League has an auto-clipper, so other games don't wait for a tag file.</span></div>
+      <div class="field"><label>Versions to make</label>
+        <div class="row" style="flex-wrap:wrap"><label><input type="checkbox" id="s_blur" value="blur"> Blur fill</label><label><input type="checkbox" id="s_crop" value="crop"> Center crop</label><label><input type="checkbox" id="s_cam" value="cam"> Webcam on top</label></div>
+        <span class="hint" id="camHint"></span></div>
+      <div class="field"><label for="s_watermark">Watermark</label>
+        <input type="text" id="s_watermark" maxlength="40" placeholder="@yourhandle (leave empty for none)"></div>
+      <div class="field"><label for="s_blur_zoom">Gameplay size in Blur fill</label>
+        <div class="row"><input type="range" id="s_blur_zoom" min="0.4" max="1" step="0.02"><output id="o_blur_zoom"></output></div>
+        <span class="hint">Further left shows the fight bigger but crops more of the sides.</span></div>
+      <div class="two">
+        <div class="field"><label for="s_lead_in">Seconds before the play</label><input type="number" id="s_lead_in" min="0" max="15" step="0.5"></div>
+        <div class="field"><label for="s_tail">Seconds after the play</label><input type="number" id="s_tail" min="0" max="15" step="0.5"></div>
+        <div class="field"><label for="s_min_seconds">Shortest short (s)</label><input type="number" id="s_min_seconds" min="3" max="60" step="1"></div>
+        <div class="field"><label for="s_max_seconds">Longest short (s)</label><input type="number" id="s_max_seconds" min="10" max="180" step="1"></div>
+      </div>
+      <p class="hint" style="margin:-8px 0 0">Longest short goes up to 180 s (3 minutes). OBS's Maximum Replay Time needs to be at least that long, since a short can't be longer than the replay it comes from.</p>
+    </div>
+
+    <div class="pane" data-pane="look" role="tabpanel" hidden>
+      <div class="field"><label>Theme</label>
+        <div><div class="seg" id="s_theme"><button type="button" data-v="system">System</button><button type="button" data-v="dark">Dark</button><button type="button" data-v="light">Light</button></div></div></div>
+      <div class="field"><label>Accent color</label>
+        <div class="swatches" id="s_accent"></div></div>
+      <p class="hint" style="margin:0">The look is saved with your settings, so your phone matches.</p>
+    </div>
+
+    <div class="pane" data-pane="obs" role="tabpanel" hidden>
+      <div class="obs-status" id="obsStatus"></div>
+      <div class="pane" id="obsFields" hidden>
+        <div class="field"><label for="o_mic">Microphone</label><select id="o_mic"></select></div>
+        <div class="field"><label for="o_display">Screen</label><select id="o_display"></select>
+          <span class="hint" id="displayHint"></span></div>
+        <div class="field"><label for="o_webcam">Webcam</label>
+          <div class="row"><select id="o_webcam"></select><button class="btn small" type="button" id="findCams">Find webcams</button></div></div>
+        <div class="two" id="camPlace">
+          <div class="field"><label for="o_corner">Webcam corner</label><select id="o_corner">
+            <option value="top-left">Top left</option><option value="top-right">Top right</option>
+            <option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option></select></div>
+          <div class="field"><label for="o_size">Webcam size</label><select id="o_size">
+            <option value="0.2">Small</option><option value="0.25">Medium</option><option value="0.33">Large</option></select></div>
+        </div>
+        <span class="hint" style="margin-top:-8px" id="camAbout">ClipLab puts the webcam in that corner of OBS's picture, then makes a Webcam on top version of each short: your camera above, the play below. You can still move it in OBS; ClipLab follows it.</span>
+        <div class="actions"><button class="btn small primary" type="button" id="applyObs">Apply to OBS</button><span class="hint">Changes OBS right away.</span></div>
+      </div>
+      <div class="field"><label for="s_save_sound">Sound when a replay is saved</label>
+        <div class="row"><select id="s_save_sound"><option value="off">Off</option><option value="chime">Chime</option><option value="blip">Blip</option><option value="pop">Pop</option></select>
+          <button class="btn small" type="button" id="playSound">Play</button></div>
+        <span class="hint">Plays on this PC when OBS here saves a replay, so you know your hotkey worked. If OBS records all your desktop audio, the sound can end up in the next clip.</span></div>
+    </div>
+
+    <div class="pane" data-pane="more" role="tabpanel" hidden>
+      <div class="two">
+        <div class="field"><label for="s_crf">Quality (16 best, 30 smallest)</label><input type="number" id="s_crf" min="16" max="30" step="1"></div>
+        <div class="field"><label for="s_maxrate_mbps">Max bitrate (Mbps)</label><input type="number" id="s_maxrate_mbps" min="2" max="20" step="1"></div>
+        <div class="field"><label for="s_tag_wait">Wait for tag file (s)</label><input type="number" id="s_tag_wait" min="0" max="120" step="1"></div>
+        <div class="field"><label for="s_recycle_tossed_after_days">Recycle tossed after (days)</label><input type="number" id="s_recycle_tossed_after_days" min="1" max="365" step="1"></div>
+      </div>
+      <div class="actions"><button class="btn" type="button" id="openGuide">Getting started guide</button></div>
+    </div>
+
+    <div class="actions"><button class="btn primary" type="submit">Save settings</button><button class="btn" type="button" id="cancelSettings">Cancel</button></div>
   </form>
 </dialog>
 
@@ -286,6 +347,20 @@ const NUM_FIELDS = ["blur_zoom", "lead_in", "tail", "min_seconds", "max_seconds"
 let state = { clips: [], stats: {}, config: {}, results: [] };
 let filter = "new", label = "", style = "blur", open = null, trim = null, seenResults = null, order = [];
 let guide = { data: null, testFrom: null, html: "", timer: null, shown: false };
+let obsData = null, look = null;   // look = the theme/accent being previewed in Settings
+const VERSIONS = { blur: "Blur fill", crop: "Center crop", cam: "Webcam on top" };
+const ACCENTS = { copper: ["#c38a63", "#a8693f"], blue: ["#6fa3d8", "#2f6aa8"], green: ["#8cc06a", "#4d7d2c"],
+                  purple: ["#a98ad8", "#6f4fb0"], pink: ["#e08bb0", "#b04a7a"] };   // [dark, light]
+const darkMedia = matchMedia("(prefers-color-scheme: dark)");
+function applyLook(theme, accent) {
+  const root = document.documentElement;
+  if (theme === "dark" || theme === "light") root.dataset.theme = theme; else delete root.dataset.theme;
+  const dark = theme === "dark" || (theme !== "light" && darkMedia.matches);
+  root.style.setProperty("--sun", (ACCENTS[accent] || ACCENTS.copper)[dark ? 0 : 1]);
+  try { localStorage.setItem("cl-look", JSON.stringify([theme, accent])); } catch (e) {}
+}
+try { const saved = JSON.parse(localStorage.getItem("cl-look")); if (saved) applyLook(saved[0], saved[1]); } catch (e) {}
+darkMedia.addEventListener("change", () => { const c = look || state.config || {}; applyLook(c.theme, c.accent); });
 try { filter = localStorage.getItem("cl-filter") || "new"; style = localStorage.getItem("cl-style") || "blur"; } catch (e) {}
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -353,6 +428,7 @@ function card(c) {
 
 function render() {
   const s = state, eng = s.engine || {};
+  if (!look) applyLook((s.config || {}).theme, (s.config || {}).accent);
   $("pMain").hidden = !s.peer;
   if (s.peer) {
     const main = s.online ? (s.paused ? ["warn", "in a game (sync paused)"] : ["ok", "connected"]) : s.online === false ? ["bad", "offline"] : ["", "unknown"];
@@ -414,7 +490,7 @@ function fillSheet(loadVideo) {
   const v = vid(c);
   $("sTitle").textContent = nice(c);
   $("sSub").textContent = [when(c.time), c.game, c.champion, c.length ? Math.round(c.length) + " s" : "", c.trimmed ? "re-cut" : ""].filter(Boolean).join(" · ");
-  $("seg").innerHTML = Object.keys(c.videos).map((k, i) => `<button type="button" data-s="${k}" aria-pressed="${k === v}">${k === "blur" ? "Blur fill" : "Center crop"} <kbd>${i + 1}</kbd></button>`).join("");
+  $("seg").innerHTML = Object.keys(c.videos).map((k, i) => `<button type="button" data-s="${k}" aria-pressed="${k === v}">${VERSIONS[k] || k} <kbd>${i + 1}</kbd></button>`).join("");
   $("dl").href = `/media/${encodeURI(c.videos[v])}?dl=1`;
   $("sCaption").textContent = c.caption || "(no caption file)";
   $("sPaths").innerHTML = Object.entries(c.paths).map(([k, p]) => `<div><span class="label">${esc(k)}</span><code>${esc(p)}</code></div>`).join("");
@@ -471,11 +547,80 @@ function openSettings() {
   const c = state.config || {};
   $("s_game").innerHTML = Object.entries(state.games || {}).map(([k, name]) => `<option value="${esc(k)}">${esc(name)}</option>`).join("");
   $("s_game").value = c.game;
-  $("s_blur").checked = (c.styles || []).includes("blur"); $("s_crop").checked = (c.styles || []).includes("crop");
+  for (const st of ["blur", "crop", "cam"]) $("s_" + st).checked = (c.styles || []).includes(st);
+  drawCamOption();
+  look = { theme: c.theme || "system", accent: c.accent || "copper" };
+  drawLook();
+  $("s_save_sound").value = c.save_sound || "off";
+  obsData = null;   // re-read OBS each time Settings opens
+  showPane("shorts");
   $("s_watermark").value = c.watermark || "";
   for (const k of NUM_FIELDS) $("s_" + k).value = c[k];
   $("o_blur_zoom").textContent = Math.round(c.blur_zoom * 100) + "%";
   $("settings").showModal();
+}
+
+function drawCamOption() {
+  const has = !!((state.config || {}).webcam || {}).rect;
+  $("s_cam").disabled = !has;
+  if (!has) $("s_cam").checked = false;
+  $("camHint").textContent = has ? "" : "Webcam on top needs a webcam: set one up under OBS.";
+}
+function drawLook() {
+  for (const b of $("s_theme").querySelectorAll("button")) b.setAttribute("aria-pressed", b.dataset.v === look.theme);
+  const dark = look.theme === "dark" || (look.theme !== "light" && darkMedia.matches);
+  $("s_accent").innerHTML = Object.entries(ACCENTS).map(([k, c]) =>
+    `<label><input type="radio" name="accent" value="${k}"${k === look.accent ? " checked" : ""}><span style="background:${c[dark ? 0 : 1]}"></span>${k[0].toUpperCase() + k.slice(1)}</label>`).join("");
+  applyLook(look.theme, look.accent);
+}
+function showPane(name) {
+  for (const b of $("setTabs").querySelectorAll("button")) b.setAttribute("aria-selected", b.dataset.pane === name);
+  for (const p of $("settingsForm").querySelectorAll(".pane[data-pane]")) p.hidden = p.dataset.pane !== name;
+  if (name === "obs" && !obsData) loadObs(false);
+}
+
+/* ---------- OBS ---------- */
+async function loadObs(findWebcams) {
+  $("obsStatus").innerHTML = '<span class="dot busy"></span>' + (findWebcams ? "Looking for webcams… (your camera's light may blink)" : "Checking OBS…");
+  try { const r = await fetch("/api/obs" + (findWebcams ? "?webcams=1" : ""), { cache: "no-store" }); obsData = await r.json(); }
+  catch (e) { obsData = { ok: false, error: "Can't reach ClipLab right now." }; }
+  drawObs();
+}
+function fillSelect(sel, options, current, first) {
+  sel.innerHTML = (first ? `<option value="">${esc(first)}</option>` : "") + options.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
+  sel.value = current || "";
+  if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+}
+function drawObs() {
+  const d = obsData;
+  $("obsFields").hidden = !d.ok;
+  $("obsStatus").innerHTML = d.ok ? `<span class="dot ok"></span>Connected to OBS · scene "${esc(d.scene)}"`
+    : `<span class="dot bad"></span><span>${esc(d.error)} <button class="btn small" type="button" id="retryObs">Try again</button></span>`;
+  if (!d.ok) return;
+  fillSelect($("o_mic"), d.mic.options, d.mic.current, d.mic.source ? "" : "Not set up yet");
+  fillSelect($("o_display"), d.display.options, d.display.current, d.display.source ? "" : "Don't add one");
+  $("displayHint").textContent = d.display.source
+    ? `Changes which screen "${d.display.source}" captures.`
+    : d.game_capture ? "Your scene records the game window. Pick a screen to add a screen capture behind it (shows when the game isn't running)." : "Pick a screen to add a screen capture to your scene.";
+  const cams = d.webcam.options;
+  fillSelect($("o_webcam"), cams || [], d.webcam.on ? d.webcam.current : "", "None");
+  $("findCams").hidden = !!cams;
+  const w = (state.config || {}).webcam || {};
+  $("o_corner").value = w.corner || "bottom-left";
+  $("o_size").value = String(w.size || 0.25);
+  if ($("o_size").selectedIndex < 0) $("o_size").value = "0.25";
+  drawCamPlace();
+}
+function drawCamPlace() { $("camPlace").hidden = !$("o_webcam").value; }
+function obsChanges() {
+  const d = obsData, body = {};
+  if ($("o_mic").value && $("o_mic").value !== d.mic.current) body.mic = $("o_mic").value;
+  if ($("o_display").value && $("o_display").value !== d.display.current) body.display = $("o_display").value;
+  const w = (state.config || {}).webcam || {}, device = $("o_webcam").value;
+  const was = d.webcam.on ? d.webcam.current || "" : "";
+  if (device !== was || (device && ($("o_corner").value !== w.corner || Number($("o_size").value) !== w.size || !w.rect)))
+    body.webcam = { device, corner: $("o_corner").value, size: Number($("o_size").value) };
+  return body;
 }
 
 /* ---------- getting started ---------- */
@@ -490,13 +635,14 @@ async function pollGuide() {
 }
 function guideSteps(d) {
   const o = d.obs || {}, keys = (o.hotkeys || []).join(" or "), steps = [];
+  const need = Math.round((state.config || {}).max_seconds || 60);
   if (!o.installed) steps.push({ title: "Install OBS Studio", status: ["bad", "OBS isn't installed on this PC"],
     body: `It's free from <a href="https://obsproject.com/download" target="_blank" rel="noopener">obsproject.com</a>. Install it, open it once, then come back here.` });
   steps.push({ title: "Turn on the replay buffer",
-    body: "In OBS, open <b>Settings → Output</b> (in Advanced mode, the <b>Replay Buffer</b> tab). Tick <b>Enable Replay Buffer</b> and set <b>Maximum Replay Time</b> to 45–60 seconds."
+    body: "In OBS, open <b>Settings → Output</b> (in Advanced mode, the <b>Replay Buffer</b> tab). Tick <b>Enable Replay Buffer</b> and set <b>Maximum Replay Time</b> to at least ${need} seconds (your Longest short setting)."
       + (o.same_as_stream ? " First set <b>Recording Quality</b> to <b>High Quality, Medium File Size</b>: OBS hides the replay buffer while it's \"Same as stream\"." : ""),
     status: o.replay_buffer == null ? null : o.same_as_stream ? ["warn", "Recording Quality is \"Same as stream\""]
-      : !o.replay_buffer ? ["", "Off"] : o.replay_seconds < 45 ? ["warn", `On, but only ${o.replay_seconds} s`] : ["ok", `On, ${o.replay_seconds} s`] });
+      : !o.replay_buffer ? ["", "Off"] : o.replay_seconds < need ? ["warn", `On, but only ${o.replay_seconds} s`] : ["ok", `On, ${o.replay_seconds} s`] });
   steps.push({ title: "Save replays to ClipLab's folder", copy: d.watch_dir,
     body: "In <b>Settings → Output</b>, set <b>Recording Path</b> to this folder:",
     status: o.path_ok == null ? null : o.path_ok ? ["ok", "OBS saves here"] : ["warn", `OBS saves to ${o.path}`] });
@@ -587,7 +733,7 @@ document.addEventListener("keydown", e => {
   if (k === "arrowleft") step(-1); else if (k === "arrowright") step(1);
   else if (k === "k") $("keep").click(); else if (k === "t") $("toss").click();
   else if (k === "d") $("dl").click(); else if (k === "c") copyCaption();
-  else if (k === "1" || k === "2") { const b = $("seg").querySelectorAll("button")[Number(k) - 1]; if (b) b.click(); }
+  else if (k === "1" || k === "2" || k === "3") { const b = $("seg").querySelectorAll("button")[Number(k) - 1]; if (b) b.click(); }
   else return;
   e.preventDefault();
 });
@@ -605,6 +751,30 @@ $("gDone").addEventListener("click", async () => {
   if (await post("/api/setup/done", {})) { $("guide").close(); toast("You're set up. Go make some plays!"); refresh(); }
 });
 $("closeSettings").addEventListener("click", () => $("settings").close());
+$("settings").addEventListener("close", () => { const c = state.config || {}; look = null; applyLook(c.theme, c.accent); });   // undo an unsaved preview
+$("setTabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showPane(b.dataset.pane); });
+$("s_theme").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { look.theme = b.dataset.v; drawLook(); } });
+$("s_accent").addEventListener("change", e => { look.accent = e.target.value; applyLook(look.theme, look.accent); });
+$("playSound").addEventListener("click", () => {
+  const name = $("s_save_sound").value;
+  if (name === "off") return toast("Pick a sound first");
+  new Audio(`/sound/${name}.wav`).play().catch(() => toast("Your browser blocked the sound", true));
+});
+$("obsStatus").addEventListener("click", e => { if (e.target.id === "retryObs") loadObs(false); });
+$("findCams").addEventListener("click", () => loadObs(true));
+$("o_webcam").addEventListener("change", drawCamPlace);
+$("applyObs").addEventListener("click", async () => {
+  const body = obsChanges();
+  if (!Object.keys(body).length) return toast("OBS already matches");
+  $("applyObs").disabled = true;
+  const r = await post("/api/obs", body);
+  $("applyObs").disabled = false;
+  if (!r) return;
+  toast("OBS updated");
+  await refresh();
+  if (body.webcam) { const st = state.config.styles || []; drawCamOption(); $("s_cam").checked = st.includes("cam"); }
+  loadObs(!!(obsData && obsData.webcam && obsData.webcam.options));
+});
 $("cancelSettings").addEventListener("click", () => $("settings").close());
 $("s_game").addEventListener("change", e => {   // only League's auto-clipper writes tag files
   if (e.target.value !== "league") $("s_tag_wait").value = 0;
@@ -613,10 +783,11 @@ $("s_game").addEventListener("change", e => {   // only League's auto-clipper wr
 $("s_blur_zoom").addEventListener("input", e => { $("o_blur_zoom").textContent = Math.round(e.target.value * 100) + "%"; });
 $("settingsForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const body = { game: $("s_game").value, styles: ["blur", "crop"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value };
+  const body = { game: $("s_game").value, styles: ["blur", "crop", "cam"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value,
+                 theme: look.theme, accent: look.accent, save_sound: $("s_save_sound").value };
   for (const k of NUM_FIELDS) body[k] = Number($("s_" + k).value);
   const r = await post("/api/config", body);
-  if (r) { toast("Settings saved"); $("settings").close(); refresh(); }
+  if (r) { toast("Settings saved"); state.config = { ...state.config, theme: look.theme, accent: look.accent }; $("settings").close(); refresh(); }
 });
 
 refresh();

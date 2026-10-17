@@ -59,6 +59,14 @@ Pick **Rainbow Six Siege** under **Game** in the app's settings (⚙), or run se
 
 There's no auto-clipper for Siege: Ubisoft doesn't offer a local game-data API like Riot's, and reading the game's memory would risk a BattlEye ban. Press your OBS *Save Replay* hotkey right after a good round. Each short is the last `max_seconds` of the replay, and you can re-cut it in the app.
 
+## OBS from the app
+Settings (⚙) > **OBS** changes OBS for you through its built-in WebSocket server (turn it on once in OBS: Tools > WebSocket Server Settings > Enable WebSocket server). ClipLab reads the password from OBS's own settings, so there's nothing to type.
+- **Microphone** and **Screen**: pick from the devices OBS sees. Picking a screen when your scene only has a game capture adds a screen capture behind it.
+- **Webcam**: pick a camera, a corner and a size. ClipLab puts it in that corner of OBS's picture and makes a **Webcam on top** version of each short: your camera across the top, the play below. Move it in OBS later and ClipLab follows.
+- **Sound when a replay is saved**: a chime, blip or pop when OBS saves a replay, so you know your hotkey worked.
+
+These work with the OBS on the same PC as ClipLab. In two-PC mode they need ClipLab running on the gaming PC too.
+
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
 
@@ -69,7 +77,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | **Player** | Switch Blur fill / Center crop, Download, Copy caption, Keep, Toss. Keys: ← → browse · K keep · T toss · D download · C copy · 1 / 2 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
-| **Settings (⚙)** | Game, versions, watermark, gameplay size, seconds before/after the play, min/max length, quality. |
+| **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -86,6 +94,9 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
 | `setup_done` | `false` | Set when you finish the app's Getting started guide; set it back to `false` to see the guide on its own again |
 | `game` | `league` | `league` or `r6`; sets caption hashtags (a tag file naming its game wins) |
+| `theme`, `accent` | `system`, `copper` | The app's look: `system`/`dark`/`light`; `copper`, `blue`, `green`, `purple` or `pink` |
+| `save_sound` | `off` | `off`, `chime`, `blip` or `pop`, played when OBS on this PC saves a replay |
+| `webcam` | *(none)* | Where the app placed your webcam in OBS (`rect` as fractions of the canvas, `corner`, `size`); used by the `cam` version |
 | `styles`, `lead_in`, `tail`, `min_seconds`, `max_seconds`, `blur_zoom`, `watermark`, `crf`, `maxrate_mbps`, `tag_wait`, `recycle_tossed_after_days` | | Render settings (also in the app) |
 
 `python -m cliplab config` prints where everything is and the settings in effect.

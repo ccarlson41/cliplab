@@ -21,10 +21,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import obs
+from . import obs, obsctl, obsws, sounds
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
-                       TOSSED, VIDEO_EXT, WEB, clean_config, load_config, output_dir, read_json, tool, watch_dir,
-                       write_json)
+                       TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json, tool,
+                       watch_dir, webcam_rect, write_json)
 
 MULTI = ("DOUBLE", "TRIPLE", "QUADRA", "PENTA")
 thumb_lock = threading.Lock()
@@ -98,6 +98,44 @@ def setup_state():
     watch = watch_dir(cfg)
     return {"watch_dir": str(watch), "obs": obs.check(watch), "obs_running": obs.obs_running(),
             "latest": latest_clip(watch), "now": time.time(), "game": cfg["game"]}
+
+
+def obs_state(find_webcams):
+    """OBS's mic, screen and webcam for the settings page. Follows the webcam if it was moved in OBS."""
+    try:
+        data = obsctl.describe(find_webcams)
+    except obsws.ObsError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:  # an OBS version that answers differently
+        return {"ok": False, "error": f"OBS answered in a way ClipLab didn't expect ({type(e).__name__}: {e})."}
+    cam = data["webcam"]
+    rect = webcam_rect(cam["rect"]) if cam["on"] else None
+    cfg = load_config()
+    if rect and cfg["webcam"]["rect"] and max(abs(a - b) for a, b in zip(rect, cfg["webcam"]["rect"])) > 0.005:
+        cfg["webcam"]["rect"] = rect
+        write_json(CONFIG, cfg)
+    return {"ok": True, **data}
+
+
+def obs_changes(body):
+    """Check what the app asked to change in OBS. Returns (changes, error)."""
+    changes = {}
+    for key in ("mic", "display"):
+        if body.get(key) is not None:
+            if not isinstance(body[key], str) or not body[key]:
+                return None, f"Pick a {key} from the list."
+            changes[key] = body[key]
+    if "webcam" in body:
+        cam = body["webcam"] if isinstance(body["webcam"], dict) else {}
+        device, corner = cam.get("device") or "", cam.get("corner", "bottom-left")
+        try:
+            size = float(cam.get("size", 0.25))
+        except (TypeError, ValueError):
+            size = 0
+        if not isinstance(device, str) or corner not in WEBCAM_CORNERS or not 0.15 <= size <= 0.4:
+            return None, "Pick a webcam, a corner and a size."
+        changes["webcam"] = {"device": device, "corner": corner, "size": size}
+    return changes, None
 
 
 def build_state():
@@ -337,6 +375,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(build_state())
         if route == "/api/setup":
             return self.send_json(setup_state())
+        if route == "/api/obs":
+            return self.send_json(obs_state("webcams" in parse_qs(url.query)))
+        if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.TONES:
+            body = sounds.wav_bytes(route[7:-4])
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            return self.wfile.write(body)
         if route.startswith("/media/"):
             path = inside(output_dir(), route[len("/media/"):])
             return self.send_file(path, download="dl" in parse_qs(url.query)) if path else self.send_error(404)
@@ -395,6 +443,25 @@ class Handler(BaseHTTPRequestHandler):
             if error:
                 return self.send_json({"error": error}, 400)
             write_json(CONFIG, cfg)
+            return self.send_json({"ok": True})
+
+        if route == "/api/obs":
+            changes, error = obs_changes(body)
+            if error:
+                return self.send_json({"error": error}, 400)
+            try:
+                rect = obsctl.apply(changes)
+            except obsws.ObsError as e:
+                return self.send_json({"error": str(e)}, 400)
+            except Exception as e:  # an OBS version that answers differently
+                return self.send_json({"error": f"OBS answered in a way ClipLab didn't expect ({e})."}, 400)
+            if rect != "unchanged":   # the webcam moved, appeared or went away: keep the Webcam on top version in step
+                cfg = load_config()
+                cfg["webcam"] = {"rect": webcam_rect(rect), "corner": changes["webcam"]["corner"],
+                                 "size": changes["webcam"]["size"]}
+                styles = [st for st in cfg["styles"] if st != "cam"]
+                cfg["styles"] = (styles + ["cam"]) if cfg["webcam"]["rect"] else (styles or ["crop"])
+                write_json(CONFIG, cfg)
             return self.send_json({"ok": True})
 
         if route == "/api/setup/done":
