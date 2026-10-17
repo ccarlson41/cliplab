@@ -1,6 +1,6 @@
 [
  {
-  "version": "0.8.0",
+  "version": "0.9.0",
   "date": "2026-10-17",
   "title": "Confetti, history and your ideas",
   "highlights": [
@@ -11,14 +11,26 @@
   ]
  },
  {
+  "version": "0.8.0",
+  "date": "2026-10-17",
+  "title": "Subtitles steal the show",
+  "highlights": [
+   {"icon": "💬", "headline": "Subtitles are here", "text": "ClipLab writes what's said in your clip on screen, a few punchy words at a time, in Bold, Pop, Boxed or Clean, low, middle or up top. It all happens on your PC."},
+   {"icon": "💥", "headline": "Intro hook", "text": "Add a whoosh and a quick zoom punch to the first moment of every short, so people scrolling past stop on it."},
+   {"icon": "🚀", "headline": "Ready to post", "text": "One button (or P) downloads your short and copies its caption, ready to paste into TikTok, YouTube Shorts or Reels."},
+   {"icon": "🎮", "headline": "VALORANT joins the lab", "text": "VALORANT joins League and Siege. Any game works; the game setting just picks your hashtags."}
+  ]
+ },
+ {
   "version": "0.7.0",
   "date": "2026-10-17",
   "title": "OBS at your fingertips",
   "highlights": [
-   {"icon": "🎛️", "headline": "Control OBS from the app", "text": "Pick your mic and screen and place your webcam from Settings, without digging through OBS."},
-   {"icon": "📸", "headline": "Webcam on top", "text": "A new version of each short with your camera across the top and the play below."},
-   {"icon": "🎨", "headline": "Themes and accent colors", "text": "Go dark, light or follow your system, in one of five accent colors that every device shares."},
-   {"icon": "🔔", "headline": "Save sound", "text": "Hear a chime, blip or pop when OBS saves a replay, so you know your hotkey worked."}
+   {"icon": "📸", "headline": "Your face, front and center", "text": "Pick your webcam in Settings > OBS and ClipLab puts it in a corner of OBS for you. Every short then gets a Webcam on top version: your reaction across the top, the play below."},
+   {"icon": "🎛️", "headline": "Run OBS from ClipLab", "text": "Choose your mic and which screen OBS records without digging through OBS's menus."},
+   {"icon": "🎨", "headline": "Make it yours", "text": "Light or dark mode, plus five accent colors. Your phone matches automatically."},
+   {"icon": "🔔", "headline": "Hear it save", "text": "Turn on a little chime, blip or pop for whenever your replay hotkey saves a clip."},
+   {"icon": "⏱️", "headline": "Longer shorts", "text": "Shorts can run up to 3 minutes, and the Getting started guide checks OBS keeps enough replay to fill them."}
   ]
  },
  {
