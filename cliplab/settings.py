@@ -27,7 +27,11 @@ WEB = PACKAGE / "web"
 
 VIDEO_EXT = {".mp4", ".mkv", ".mov"}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW for subprocesses on Windows
-ALL_STYLES = ("blur", "crop")
+ALL_STYLES = ("blur", "crop", "cam")   # cam = webcam on top, gameplay below (needs webcam.rect)
+THEMES = ("system", "dark", "light")
+ACCENTS = ("copper", "blue", "green", "purple", "pink")
+SAVE_SOUNDS = ("off", "chime", "blip", "pop")   # played when OBS saves a replay (see sounds.py)
+WEBCAM_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 GAMES = {                             # games ClipLab knows: display name (as in tag files) and caption hashtags
     "league": {"name": "League of Legends", "hashtags": "#leagueoflegends #lol"},
     "r6": {"name": "Rainbow Six Siege", "hashtags": "#rainbowsixsiege #r6siege #r6"},
@@ -62,9 +66,19 @@ DEFAULTS = {
     "maxrate_mbps": 8,
     "tag_wait": 20,
     "recycle_tossed_after_days": 14,
+    # --- look and OBS extras (editable from the app) ---
+    "theme": "system",
+    "accent": "copper",
+    "save_sound": "off",
+    "webcam": {                            # set by the app's OBS settings, which place the webcam in OBS
+        "rect": None,                      # [x, y, w, h] as fractions of OBS's canvas; None = no webcam
+        "corner": "bottom-left",
+        "size": 0.25,                      # fraction of the canvas width
+    },
 }
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
-                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days")
+                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound")
+CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS}
 LIMITS = {
     "lead_in": (0, 15), "tail": (0, 15), "min_seconds": (3, 60), "max_seconds": (10, 180),
     "blur_zoom": (0.4, 1.0), "crf": (16, 30), "maxrate_mbps": (2, 20), "tag_wait": (0, 120),
@@ -91,13 +105,28 @@ def load_config():
     cfg = json.loads(json.dumps(DEFAULTS))
     saved = read_json(CONFIG, {})
     for key, value in saved.items():
-        if key == "peer" and isinstance(value, dict):
-            cfg["peer"].update({k: v for k, v in value.items() if k in DEFAULTS["peer"]})
+        if key in ("peer", "webcam") and isinstance(value, dict):
+            cfg[key].update({k: v for k, v in value.items() if k in DEFAULTS[key]})
         elif key in DEFAULTS:
             cfg[key] = value
     game = str(cfg["game"]).lower()   # hand edits like "R6" still count; anything unknown means League
     cfg["game"] = game if game in GAMES else DEFAULTS["game"]
+    for key, options in CHOICES.items():
+        if cfg[key] not in options:
+            cfg[key] = DEFAULTS[key]
+    cfg["webcam"]["rect"] = webcam_rect(cfg["webcam"]["rect"])
     return cfg
+
+
+def webcam_rect(rect):
+    """A valid [x, y, w, h] (fractions of the canvas, inside it, not tiny), or None."""
+    try:
+        x, y, w, h = (float(v) for v in rect)
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= x < 1 and 0 <= y < 1 and 0.02 <= w <= 1 - x + 1e-6 and 0.02 <= h <= 1 - y + 1e-6):
+        return None
+    return [round(v, 4) for v in (x, y, w, h)]
 
 
 def watch_dir(cfg=None):
@@ -139,10 +168,16 @@ def clean_config(changes):
             styles = [s for s in ALL_STYLES if s in value]
             if not styles:
                 return cfg, "Pick at least one version to render."
+            if "cam" in styles and not cfg["webcam"]["rect"]:
+                return cfg, "Set up a webcam under OBS first, then turn on Webcam on top."
             cfg[key] = styles
         elif key == "game":
             if not isinstance(value, str) or value not in GAMES:
                 return cfg, f"Unknown game: {value}"
+            cfg[key] = value
+        elif key in CHOICES:
+            if value not in CHOICES[key]:
+                return cfg, f"Unknown {key.replace('_', ' ')}: {value}"
             cfg[key] = value
         elif key == "watermark":
             cfg[key] = "".join(c for c in str(value) if c.isalnum() or c in " @._-#")[:40].strip()
