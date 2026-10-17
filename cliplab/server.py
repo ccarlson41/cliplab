@@ -328,6 +328,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(403, "ClipLab only answers this PC (and your home network when allow_lan is on)")
         return False
 
+    def discard_body(self):
+        """Read and drop a refused POST's body: replying with it unread makes Windows reset the connection,
+        and the sender can lose the refusal before reading it."""
+        try:
+            left = min(int(self.headers.get("Content-Length") or 0), 1 << 20)
+            while left > 0:
+                chunk = self.rfile.read(min(left, 65536))
+                if not chunk:
+                    break
+                left -= len(chunk)
+        except (ValueError, OSError):
+            pass
+
     def send_json(self, data, status=200):
         body = json.dumps(data).encode()
         self.send_response(status)
@@ -415,6 +428,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         refused = cross_site(self.headers)
         if refused:
+            self.discard_body()
             return self.send_json({"error": refused}, 403)
         route = urlparse(self.path).path
         try:
