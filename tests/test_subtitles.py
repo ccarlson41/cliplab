@@ -14,7 +14,7 @@ import wave
 from pathlib import Path
 from unittest import mock
 
-os.environ.setdefault("CLIPLAB_HOME", tempfile.mkdtemp(prefix="cliplab-test-"))
+os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import engine, sounds, subtitles  # noqa: E402
 from cliplab.settings import CONFIG, DEFAULTS, GAMES, HOME, NO_WINDOW, clean_config, load_config, write_json  # noqa: E402

@@ -10,7 +10,7 @@ import time
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("CLIPLAB_HOME", tempfile.mkdtemp(prefix="cliplab-test-"))
+os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import obs, server  # noqa: E402
 from cliplab.settings import CONFIG, HOME, STATE, write_json  # noqa: E402

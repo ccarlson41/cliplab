@@ -79,22 +79,45 @@ def placement(corner, size, width, height):
     return x, y, w, h
 
 
+def fitted(kind, cw, ch, bw, bh):
+    """The picture's size inside its bounding box, for each of OBS's bounds types (cw x ch = cropped source)."""
+    if kind == "OBS_BOUNDS_STRETCH" or not (cw and ch):
+        return bw, bh
+    inner = min(bw / cw, bh / ch)
+    scale = {"OBS_BOUNDS_SCALE_INNER": inner, "OBS_BOUNDS_SCALE_OUTER": max(bw / cw, bh / ch),
+             "OBS_BOUNDS_SCALE_TO_WIDTH": bw / cw, "OBS_BOUNDS_SCALE_TO_HEIGHT": bh / ch,
+             "OBS_BOUNDS_MAX_ONLY": min(1.0, inner)}.get(kind, inner)
+    return cw * scale, ch * scale
+
+
 def item_rect(t, width, height):
-    """The part of the canvas a scene item's picture covers, as [x, y, w, h] fractions (ignores rotation)."""
+    """The part of the canvas a scene item's picture covers, as [x, y, w, h] fractions (ignores rotation).
+
+    OBS reports crop separately from the size (width/height don't have it taken off), and crops before it
+    scales or fits the picture into a bounding box. The result is clipped to the canvas."""
     sw, sh = float(t.get("sourceWidth") or 0), float(t.get("sourceHeight") or 0)
-    if t.get("boundsType", "OBS_BOUNDS_NONE") != "OBS_BOUNDS_NONE":
-        bw, bh = float(t["boundsWidth"]), float(t["boundsHeight"])
-        w, h = bw, bh
-        if t["boundsType"] == "OBS_BOUNDS_SCALE_INNER" and sw and sh:   # letterboxed inside its box
-            scale = min(bw / sw, bh / sh)
-            w, h = sw * scale, sh * scale
-        x, y = anchor(t["positionX"], bw, t.get("alignment", 5)), anchor(t["positionY"], bh, t.get("alignment", 5), 4)
-        x += (bw - w) * share(t.get("boundsAlignment", 0))
-        y += (bh - h) * share(t.get("boundsAlignment", 0), 4)
+    cw = max(0.0, sw - float(t.get("cropLeft") or 0) - float(t.get("cropRight") or 0))
+    ch = max(0.0, sh - float(t.get("cropTop") or 0) - float(t.get("cropBottom") or 0))
+    align, kind = t.get("alignment", 5), t.get("boundsType", "OBS_BOUNDS_NONE")
+    if kind == "OBS_BOUNDS_NONE":
+        if cw and ch:
+            w, h = cw * abs(float(t.get("scaleX", 1))), ch * abs(float(t.get("scaleY", 1)))
+        else:   # OBS hasn't sized the source yet
+            w, h = float(t["width"]), float(t["height"])
+        x, y = anchor(t["positionX"], w, align), anchor(t["positionY"], h, align, 4)
+        box = (x, y, x + w, y + h)
     else:
-        w, h = float(t["width"]), float(t["height"])
-        x, y = anchor(t["positionX"], w, t.get("alignment", 5)), anchor(t["positionY"], h, t.get("alignment", 5), 4)
-    return [x / width, y / height, w / width, h / height]
+        bw, bh = float(t["boundsWidth"]), float(t["boundsHeight"])
+        w, h = fitted(kind, cw, ch, bw, bh)
+        bx, by = anchor(t["positionX"], bw, align), anchor(t["positionY"], bh, align, 4)
+        x = bx + (bw - w) * share(t.get("boundsAlignment", 0))
+        y = by + (bh - h) * share(t.get("boundsAlignment", 0), 4)
+        box = (x, y, x + w, y + h)
+        if t.get("cropToBounds"):   # a picture bigger than its box (Scale to outer) is cut to the box
+            box = (max(x, bx), max(y, by), min(x + w, bx + bw), min(y + h, by + bh))
+    x0, y0 = max(0.0, box[0]), max(0.0, box[1])   # a webcam hanging off the canvas edge: keep the part on it
+    x1, y1 = min(width, box[2]), min(height, box[3])
+    return [x0 / width, y0 / height, max(0.0, x1 - x0) / width, max(0.0, y1 - y0) / height]
 
 
 def share(alignment, low_bit=1):
@@ -145,11 +168,46 @@ def live_webcam_rect(obs_factory=Obs):
         return rect if on else None
 
 
+CORNER_ALIGN = {"top-left": 5, "top-right": 6, "bottom-left": 9, "bottom-right": 10}   # OBS alignment flags
+
+
+def inputs(obs):
+    return obs.request("GetInputList").get("inputs", [])
+
+
+def add_to_scene(obs, scene, kind, settings, reuse=None):
+    """Put an input of this kind into the scene and return (name, scene item id).
+
+    Input names are global in OBS, so ClipLab's own "Mic"/"Display"/"ClipLab Webcam" may already exist in
+    another scene: then that input is added here instead of making a second one (which OBS refuses).
+    reuse names an existing input to add instead (e.g. your own webcam source)."""
+    known = {i["inputName"]: kind_of(i) for i in inputs(obs)}
+    name = reuse or NAMES[kind]
+    if known.get(name) == kind:
+        if not reuse:
+            obs.request("SetInputSettings", {"inputName": name, "inputSettings": settings})
+        return name, obs.request("CreateSceneItem", {"sceneName": scene, "sourceName": name})["sceneItemId"]
+    n = 2
+    while name in known:   # the name belongs to some other kind of source: pick a free one
+        name, n = f"{NAMES[kind]} {n}", n + 1
+    made = obs.request("CreateInput", {"sceneName": scene, "inputName": name, "inputKind": kind, "inputSettings": settings})
+    return name, made["sceneItemId"]
+
+
+def capturing(obs, kind, value):
+    """The name of an input anywhere in OBS already capturing this device, or None."""
+    for i in inputs(obs):
+        if kind_of(i) == kind and setting(obs, i["inputName"], kind) == value:
+            return i["inputName"]
+    return None
+
+
 def apply(changes, obs_factory=Obs):
     """Change OBS: {"mic": device id, "display": monitor id, "webcam": {"device": id or "", "corner", "size"}}.
 
-    Returns the webcam's new rect (fractions of the canvas) when the webcam was changed, else "unchanged"."""
-    result = "unchanged"
+    Returns (rect, note): rect is the webcam's new spot (fractions of the canvas) when the webcam was changed,
+    None when it was turned off, else "unchanged"; note is something worth telling you, or ""."""
+    result, note = "unchanged", ""
     with obs_factory() as obs:
         scene, items = current_scene(obs)
         width, height = canvas(obs)
@@ -158,23 +216,17 @@ def apply(changes, obs_factory=Obs):
             if name:
                 obs.request("SetInputSettings", {"inputName": name, "inputSettings": {"device_id": changes["mic"]}})
             else:
-                obs.request("CreateInput", {"sceneName": scene, "inputName": NAMES[MIC], "inputKind": MIC,
-                                            "inputSettings": {"device_id": changes["mic"]}})
+                add_to_scene(obs, scene, MIC, {"device_id": changes["mic"]})
         if changes.get("display"):
             name = find(obs, DISPLAY, items)
             if name:
                 obs.request("SetInputSettings", {"inputName": name, "inputSettings": {"monitor_id": changes["display"]}})
-            else:   # new screen capture goes at the back, so a game capture stays on top of it
-                made = obs.request("CreateInput", {"sceneName": scene, "inputName": NAMES[DISPLAY], "inputKind": DISPLAY,
-                                                   "inputSettings": {"monitor_id": changes["display"]}})
-                obs.request("SetSceneItemIndex", {"sceneName": scene, "sceneItemId": made["sceneItemId"],
-                                                  "sceneItemIndex": 0})
-                obs.request("SetSceneItemTransform", {"sceneName": scene, "sceneItemId": made["sceneItemId"],
-                                                      "sceneItemTransform": {"positionX": 0, "positionY": 0,
-                                                                             "alignment": 5, "boundsAlignment": 0,
-                                                                             "boundsType": "OBS_BOUNDS_SCALE_INNER",
-                                                                             "boundsWidth": width,
-                                                                             "boundsHeight": height}})
+            else:   # a new screen capture goes at the back, so a game capture stays on top of it
+                _, sid = add_to_scene(obs, scene, DISPLAY, {"monitor_id": changes["display"]})
+                obs.request("SetSceneItemIndex", {"sceneName": scene, "sceneItemId": sid, "sceneItemIndex": 0})
+                obs.request("SetSceneItemTransform", {"sceneName": scene, "sceneItemId": sid, "sceneItemTransform": {
+                    "positionX": 0, "positionY": 0, "alignment": 5, "boundsAlignment": 0,
+                    "boundsType": "OBS_BOUNDS_SCALE_INNER", "boundsWidth": width, "boundsHeight": height}})
         if "webcam" in changes:
             cam = changes["webcam"]
             name = find(obs, WEBCAM, items)
@@ -182,19 +234,24 @@ def apply(changes, obs_factory=Obs):
             if not cam.get("device"):
                 if sid is not None:
                     obs.request("SetSceneItemEnabled", {"sceneName": scene, "sceneItemId": sid, "sceneItemEnabled": False})
-                return None
-            if sid is None:
-                name = NAMES[WEBCAM]
-                sid = obs.request("CreateInput", {"sceneName": scene, "inputName": name, "inputKind": WEBCAM,
-                                                  "inputSettings": {"video_device_id": cam["device"]}})["sceneItemId"]
-            else:
+                return None, ""
+            if sid is not None:
                 obs.request("SetInputSettings", {"inputName": name, "inputSettings": {"video_device_id": cam["device"]}})
+            else:
+                # Windows usually shows a camera in only one capture at a time, so use yours if you have one
+                mine = capturing(obs, WEBCAM, cam["device"])
+                name, sid = add_to_scene(obs, scene, WEBCAM, {"video_device_id": cam["device"]}, reuse=mine)
+                if mine and mine != NAMES[WEBCAM]:
+                    note = (f'ClipLab used your webcam source "{mine}". If it also shows inside another scene or '
+                            "group in this one, hide that copy.")
             count = len(obs.request("GetSceneItemList", {"sceneName": scene}).get("sceneItems", []))
             obs.request("SetSceneItemIndex", {"sceneName": scene, "sceneItemId": sid, "sceneItemIndex": count - 1})
             x, y, w, h = placement(cam["corner"], cam["size"], width, height)
             obs.request("SetSceneItemTransform", {"sceneName": scene, "sceneItemId": sid, "sceneItemTransform": {
-                "positionX": x, "positionY": y, "alignment": 5, "boundsAlignment": 0, "rotation": 0,
+                "positionX": x, "positionY": y, "alignment": 5, "rotation": 0,
+                "boundsAlignment": CORNER_ALIGN[cam["corner"]],   # flush in the corner, even for a 4:3 camera
                 "boundsType": "OBS_BOUNDS_SCALE_INNER", "boundsWidth": w, "boundsHeight": h}})
             obs.request("SetSceneItemEnabled", {"sceneName": scene, "sceneItemId": sid, "sceneItemEnabled": True})
-            result = [x / width, y / height, w / width, h / height]
-    return result
+            placed = obs.request("GetSceneItemTransform", {"sceneName": scene, "sceneItemId": sid})["sceneItemTransform"]
+            result = item_rect(placed, width, height)   # the picture itself, once OBS knows the camera's shape
+    return result, note

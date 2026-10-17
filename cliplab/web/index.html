@@ -635,8 +635,7 @@ function showPane(name) {
 /* ---------- OBS ---------- */
 async function loadObs(findWebcams) {
   $("obsStatus").innerHTML = '<span class="dot busy"></span>' + (findWebcams ? "Looking for webcams… (your camera's light may blink)" : "Checking OBS…");
-  try { const r = await fetch("/api/obs" + (findWebcams ? "?webcams=1" : ""), { cache: "no-store" }); obsData = await r.json(); }
-  catch (e) { obsData = { ok: false, error: "Can't reach ClipLab right now." }; }
+  obsData = await post("/api/obs/describe", { webcams: !!findWebcams }) || { ok: false, error: "Can't reach ClipLab right now." };
   drawObs();
 }
 function fillSelect(sel, options, current, first) {
@@ -664,7 +663,7 @@ function drawObs() {
   if ($("o_size").selectedIndex < 0) $("o_size").value = "0.25";
   drawCamPlace();
 }
-function drawCamPlace() { $("camPlace").hidden = !$("o_webcam").value; }
+function drawCamPlace() { $("camPlace").hidden = $("camAbout").hidden = !$("o_webcam").value; }
 function obsChanges() {
   const d = obsData, body = {};
   if ($("o_mic").value && $("o_mic").value !== d.mic.current) body.mic = $("o_mic").value;
@@ -692,7 +691,7 @@ function guideSteps(d) {
   if (!o.installed) steps.push({ title: "Install OBS Studio", status: ["bad", "OBS isn't installed on this PC"],
     body: `It's free from <a href="https://obsproject.com/download" target="_blank" rel="noopener">obsproject.com</a>. Install it, open it once, then come back here.` });
   steps.push({ title: "Turn on the replay buffer",
-    body: "In OBS, open <b>Settings → Output</b> (in Advanced mode, the <b>Replay Buffer</b> tab). Tick <b>Enable Replay Buffer</b> and set <b>Maximum Replay Time</b> to at least ${need} seconds (your Longest short setting)."
+    body: `In OBS, open <b>Settings → Output</b> (in Advanced mode, the <b>Replay Buffer</b> tab). Tick <b>Enable Replay Buffer</b> and set <b>Maximum Replay Time</b> to at least ${need} seconds (your Longest short setting).`
       + (o.same_as_stream ? " First set <b>Recording Quality</b> to <b>High Quality, Medium File Size</b>: OBS hides the replay buffer while it's \"Same as stream\"." : ""),
     status: o.replay_buffer == null ? null : o.same_as_stream ? ["warn", "Recording Quality is \"Same as stream\""]
       : !o.replay_buffer ? ["", "Off"] : o.replay_seconds < need ? ["warn", `On, but only ${o.replay_seconds} s`] : ["ok", `On, ${o.replay_seconds} s`] });
@@ -828,7 +827,7 @@ $("applyObs").addEventListener("click", async () => {
   const r = await post("/api/obs", body);
   $("applyObs").disabled = false;
   if (!r) return;
-  toast("OBS updated");
+  toast(r.note || "OBS updated");
   await refresh();
   if (body.webcam) { const st = state.config.styles || []; drawCamOption(); $("s_cam").checked = st.includes("cam"); }
   loadObs(!!(obsData && obsData.webcam && obsData.webcam.options));
