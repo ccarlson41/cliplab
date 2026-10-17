@@ -4,6 +4,7 @@ Speech-to-text is ffmpeg's own whisper filter (whisper.cpp, in ffmpeg 8+ "full" 
 nothing else to install. The speech model is downloaded into HOME\\models the first time it's needed.
 The engine treats every failure here as "no subtitles this time", never as a failed short.
 """
+import hashlib
 import json
 import os
 import re
@@ -14,8 +15,12 @@ import uuid
 
 from .settings import HOME, NO_WINDOW, SUBTITLE_POSITIONS, SUBTITLE_STYLES, WORK, tool
 
-MODELS = {"on": ("ggml-base.bin", 148), "accurate": ("ggml-small.bin", 488)}   # file name, size in MB
-MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}"
+# file name, size in MB, SHA-256 (from Hugging Face's LFS pointers at the pinned revision below)
+MODELS = {"on": ("ggml-base.bin", 148, "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
+          "accurate": ("ggml-small.bin", 488, "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b")}
+MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/{}"
+NO_WHISPER = ("This PC's ffmpeg can't do speech-to-text, so shorts are made without subtitles. "
+              "Run ClipLab's setup again to update it.")
 MODELS_DIR = HOME / "models"
 LEAD = 0.25   # whisper's word times run a little late; showing words just early reads naturally
 
@@ -35,6 +40,10 @@ assert tuple(PRESETS) == SUBTITLE_STYLES and SUBTITLE_POSITIONS == ("lower", "ce
 _whisper_builds = {}
 
 
+class SubtitleError(Exception):
+    """Why a short was made without subtitles, worded for the app."""
+
+
 def ffmpeg_has_whisper(cfg):
     """Whether this ffmpeg can transcribe (gyan.dev "full" builds from 8.0 on can). Checked once per ffmpeg."""
     exe = str(tool("ffmpeg", cfg))
@@ -49,14 +58,16 @@ def ffmpeg_has_whisper(cfg):
 
 
 def model_path(level, progress=None):
-    """The speech model for "on" or "accurate", downloading it the first time (to a .part file, then renamed)."""
-    name, mb = MODELS[level]
+    """The speech model for "on" or "accurate", downloading it the first time (to a .part file, checked against
+    its SHA-256, then renamed). whisper.cpp's native code reads this file, so a damaged one is never kept."""
+    name, mb, sha256 = MODELS[level]
     path = MODELS_DIR / name
     if path.exists() and path.stat().st_size > mb * 0.9e6:
         return path
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     part = path.with_name(name + ".part")
     try:
+        digest = hashlib.sha256()
         with urllib.request.urlopen(MODEL_URL.format(name), timeout=30) as r, open(part, "wb") as f:
             total, done, shown = int(r.headers.get("Content-Length") or mb * 1e6), 0, 0.0
             while True:
@@ -64,12 +75,15 @@ def model_path(level, progress=None):
                 if not chunk:
                     break
                 f.write(chunk)
+                digest.update(chunk)
                 done += len(chunk)
                 if progress and time.time() - shown > 1:
                     progress(done / total)
                     shown = time.time()
         if part.stat().st_size < mb * 0.9e6:
             raise OSError(f"the speech model download stopped early ({part.stat().st_size // 1_000_000} MB)")
+        if digest.hexdigest() != sha256:
+            raise OSError("the speech model that downloaded isn't the right file")
         os.replace(part, path)
     finally:
         part.unlink(missing_ok=True)
@@ -179,10 +193,15 @@ def write_ass(path, chunks, style, position, cam_top=None):
 
 def prepare(src, start, length, cfg, cam_top=None, status=None):
     """Make this short's subtitle files: {"normal": path, "cam": path} relative to HOME (render runs there),
-    or {} when nothing was said. Raises on any problem; the engine then renders without subtitles."""
+    or {} when nothing was said. Raises SubtitleError (or anything else) on a problem; the engine then renders
+    without subtitles and keeps the reason for the app."""
     if not ffmpeg_has_whisper(cfg):
-        raise RuntimeError("this ffmpeg has no speech-to-text; update it (winget upgrade Gyan.FFmpeg)")
-    model = model_path(cfg["subtitles"], progress=status and (lambda f: status(f"Downloading the speech model… {f:.0%}")))
+        raise SubtitleError(NO_WHISPER)
+    try:
+        model = model_path(cfg["subtitles"],
+                           progress=status and (lambda f: status(f"Downloading the speech model… {f:.0%}")))
+    except OSError as e:
+        raise SubtitleError(f"Couldn't download the speech model ({e}). ClipLab tries again with the next clip.") from e
     if status:
         status("Writing subtitles")
     chunks = chunk(transcribe(src, start, length, model, cfg), upper=PRESETS[cfg["subtitle_style"]]["upper"])

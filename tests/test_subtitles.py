@@ -3,6 +3,7 @@
 The real speech-to-text test needs an ffmpeg with the whisper filter and a whisper.cpp model:
 set CLIPLAB_TEST_WHISPER_MODEL to a ggml model file (e.g. ggml-base.bin) to run it.
 """
+import hashlib
 import io
 import json
 import os
@@ -14,7 +15,8 @@ import wave
 from pathlib import Path
 from unittest import mock
 
-os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
+_home = tempfile.mkdtemp(prefix="cliplab-test-")
+os.environ["CLIPLAB_HOME"] = _home   # never your real ClipLab home
 
 from cliplab import engine, sounds, subtitles  # noqa: E402
 from cliplab.settings import CONFIG, DEFAULTS, GAMES, HOME, NO_WINDOW, clean_config, load_config, write_json  # noqa: E402
@@ -88,9 +90,12 @@ class ModelTests(unittest.TestCase):
         body.__exit__ = lambda *a: None
         return mock.MagicMock(__enter__=lambda *a: body, __exit__=lambda *a: None)
 
+    def model(self, size):
+        return {"on": ("tiny.bin", 1, hashlib.sha256(b"x" * size).hexdigest())}
+
     def test_downloads_once_then_reuses(self):
         seen = []
-        with mock.patch.dict(subtitles.MODELS, {"on": ("tiny.bin", 1)}), \
+        with mock.patch.dict(subtitles.MODELS, self.model(1_000_000)), \
                 mock.patch.object(subtitles.urllib.request, "urlopen", return_value=self.fake_download(1_000_000)) as get:
             path = subtitles.model_path("on", progress=seen.append)
             self.assertEqual(path, self.dir / "tiny.bin")
@@ -100,34 +105,76 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(list(self.dir.glob("*.part")), [])
 
     def test_a_cut_off_download_leaves_nothing_behind(self):
-        with mock.patch.dict(subtitles.MODELS, {"on": ("tiny.bin", 1)}), \
+        with mock.patch.dict(subtitles.MODELS, self.model(300_000)), \
                 mock.patch.object(subtitles.urllib.request, "urlopen", return_value=self.fake_download(300_000)):
             with self.assertRaisesRegex(OSError, "stopped early"):
                 subtitles.model_path("on")
         self.assertEqual(list(self.dir.iterdir()), [])
 
+    def test_a_wrong_file_is_never_kept(self):
+        # the right size, the wrong bytes: whisper.cpp's native code would be reading a file nobody vetted
+        with mock.patch.dict(subtitles.MODELS, {"on": ("tiny.bin", 1, "0" * 64)}), \
+                mock.patch.object(subtitles.urllib.request, "urlopen", return_value=self.fake_download(1_000_000)):
+            with self.assertRaisesRegex(OSError, "isn't the right file"):
+                subtitles.model_path("on")
+        self.assertEqual(list(self.dir.iterdir()), [])
+
+    def test_downloads_are_pinned(self):
+        self.assertNotIn("/resolve/main/", subtitles.MODEL_URL)
+        self.assertTrue(all(len(sha) == 64 for _, _, sha in subtitles.MODELS.values()))
+
 
 class FallbackTests(unittest.TestCase):
     def test_off_or_silent_means_no_subtitles(self):
-        self.assertEqual(engine.make_subtitles("x.mp4", "x", 0, 10, True, CFG, None, print), {})
-        self.assertEqual(engine.make_subtitles("x.mp4", "x", 0, 10, False, dict(CFG, subtitles="on"), None, print), {})
+        self.assertEqual(engine.make_subtitles("x.mp4", "x", 0, 10, True, CFG, None, lambda note: None), ({}, ""))
+        files, why = engine.make_subtitles("x.mp4", "x", 0, 10, False, dict(CFG, subtitles="on"), None, lambda note: None)
+        self.assertEqual((files, "no sound" in why), ({}, True))
+        with mock.patch.object(subtitles, "prepare", return_value={}):
+            files, why = engine.make_subtitles("x.mp4", "x", 0, 10, True, dict(CFG, subtitles="on"), None, lambda note: None)
+        self.assertEqual((files, "nobody talks" in why), ({}, True))
 
     def test_problems_render_without_subtitles(self):
         cfg = dict(CFG, subtitles="on")
         with mock.patch.object(subtitles, "ffmpeg_has_whisper", return_value=False), \
                 mock.patch.object(engine, "log") as log:
-            self.assertEqual(engine.make_subtitles("x.mp4", "x.mp4", 0, 10, True, cfg, None, print), {})
-        self.assertIn("winget upgrade Gyan.FFmpeg", log.call_args[0][0])
+            files, why = engine.make_subtitles("x.mp4", "x.mp4", 0, 10, True, cfg, None, lambda note: None)
+        self.assertEqual(files, {})
+        self.assertIn("Run ClipLab's setup again", why)          # shown on the short in the app
+        self.assertIn("Run ClipLab's setup again", log.call_args[0][0])
         with mock.patch.object(subtitles, "ffmpeg_has_whisper", return_value=True), \
                 mock.patch.object(subtitles, "model_path", side_effect=OSError("no internet")), \
                 mock.patch.object(engine, "log") as log:
-            self.assertEqual(engine.make_subtitles("x.mp4", "x.mp4", 0, 10, True, cfg, None, print), {})
-        self.assertIn("no internet", log.call_args[0][0])
+            files, why = engine.make_subtitles("x.mp4", "x.mp4", 0, 10, True, cfg, None, lambda note: None)
+        self.assertEqual(files, {})
+        self.assertIn("Couldn't download the speech model (no internet)", why)
+        with mock.patch.object(subtitles, "ffmpeg_has_whisper", return_value=True), \
+                mock.patch.object(subtitles, "model_path", return_value=Path("m.bin")), \
+                mock.patch.object(subtitles, "transcribe", side_effect=subprocess.CalledProcessError(
+                    1, "ffmpeg", stderr="first line\nwhisper: failed to load model\n")), \
+                mock.patch.object(engine, "log"):
+            files, why = engine.make_subtitles("x.mp4", "x.mp4", 0, 10, True, cfg, None, lambda note: None)
+        self.assertEqual(why, "Subtitles didn't work this time (whisper: failed to load model).")
+
+    def test_the_app_hears_about_it(self):
+        from cliplab import server
+        with mock.patch.object(subtitles, "ffmpeg_has_whisper", return_value=False):
+            state = server.build_state()
+        self.assertIs(state["speech_to_text"], False)
+        write_json(HOME / "processed.json", {"a.mp4": {"done": "2026-10-17T10:00:00", "outputs": ["a_crop.mp4"],
+                                                       "dir": "d", "subtitles_note": "No subtitles: nobody talks in this clip."}})
+        (HOME / "Ready" / "d").mkdir(parents=True, exist_ok=True)
+        (HOME / "Ready" / "d" / "a_crop.mp4").write_bytes(b"")
+        try:
+            clip = next(c for c in server.build_state()["clips"] if c["key"] == "a.mp4")
+            self.assertEqual(clip["subtitles_note"], "No subtitles: nobody talks in this clip.")
+        finally:
+            (HOME / "processed.json").unlink(missing_ok=True)
 
     def test_whisper_detection(self):
         subtitles._whisper_builds.clear()
         run = mock.Mock(return_value=mock.Mock(stdout=" .. whisper           A->A       Transcribe audio\n"))
-        with mock.patch.object(subtitles.subprocess, "run", run),                 mock.patch.object(subtitles, "tool", side_effect=lambda name, cfg: Path(cfg["ffmpeg"]) / "ffmpeg.exe"):
+        with mock.patch.object(subtitles.subprocess, "run", run), \
+                mock.patch.object(subtitles, "tool", side_effect=lambda name, cfg: Path(cfg["ffmpeg"]) / "ffmpeg.exe"):
             self.assertTrue(subtitles.ffmpeg_has_whisper(dict(CFG, ffmpeg="C:\\a")))
             subtitles.ffmpeg_has_whisper(dict(CFG, ffmpeg="C:\\a"))
             self.assertEqual(run.call_count, 1)   # asked once per ffmpeg
@@ -152,7 +199,7 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(cwd, HOME)
         self.assertIn(str(sounds.whoosh_file()), cmd)
         self.assertIn(engine.ZOOM, graph)
-        self.assertIn("amix=inputs=2:duration=first", graph)
+        self.assertIn("amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.89:level=disabled:latency=1,", graph)
         cmd, _ = self.command(intro="punch", styles=["crop"])
         self.assertNotIn(str(sounds.whoosh_file()), cmd)
         self.assertIn(engine.ZOOM, cmd[cmd.index("-filter_complex") + 1])
@@ -202,11 +249,13 @@ class RealSubtitleTests(unittest.TestCase):
         if not subtitles.ffmpeg_has_whisper(cfg):
             self.skipTest("this ffmpeg has no whisper filter")
         ffmpeg = str(engine.tool("ffmpeg", cfg))
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(subtitles, "MODELS_DIR", HOME / "models"):
+        with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            (HOME / "models").mkdir(parents=True, exist_ok=True)
-            shutil.copy(MODEL, HOME / "models" / "ggml-base.bin")
+            (tmp / "models").mkdir()
+            shutil.copy(MODEL, tmp / "models" / "ggml-base.bin")   # removed with tmp; transcribe uses a relative path
+            patcher = mock.patch.object(subtitles, "MODELS_DIR", tmp / "models")
+            patcher.start()
+            self.addCleanup(patcher.stop)
             speech = tmp / "speech.wav"
             subprocess.run(["powershell", "-NoProfile", "-Command",
                             "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
@@ -217,11 +266,16 @@ class RealSubtitleTests(unittest.TestCase):
                             "-i", str(speech), "-filter_complex", "[1]adelay=1000|1000,apad[a]", "-map", "0", "-map", "[a]",
                             "-t", "6", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(clip)],
                            check=True, creationflags=NO_WINDOW)
-            subs = engine.make_subtitles(clip, "talk", 0, 6, True, cfg, None, lambda note: None)
+            subs, why = engine.make_subtitles(clip, "talk", 0, 6, True, cfg, None, lambda note: None)
+            self.assertEqual(why, "")
             text = (HOME / subs["normal"]).read_text(encoding="utf-8")
             self.assertIn("TRIPLE", text)
             names = engine.render(clip, tmp / "out", clip.stem, 0, 6, True, [], cfg, None, subs)
             self.assertEqual(engine.probe(tmp / "out" / names[0], cfg)[1], True)
+
+
+def tearDownModule():
+    shutil.rmtree(_home, ignore_errors=True)
 
 
 if __name__ == "__main__":

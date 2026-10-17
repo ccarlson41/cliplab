@@ -192,7 +192,8 @@ def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=N
     if has_audio and whoosh:
         graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[game];"
                      "[1:a]aresample=48000,volume=0.8[swish];"
-                     f"[game][swish]amix=inputs=2:duration=first:normalize=0,{split}")
+                     "[game][swish]amix=inputs=2:duration=first:normalize=0,"
+                     f"alimiter=limit=0.89:level=disabled:latency=1,{split}")   # the swish on a loud moment can't clip
     elif has_audio:
         graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11," + split)
     elif whoosh:   # a silent clip still gets the whoosh, then silence
@@ -244,15 +245,23 @@ def current_webcam(cfg):
 
 
 def make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note):
-    """This short's subtitle files, or {} when they're off, there's no audio, or anything goes wrong."""
-    if cfg["subtitles"] == "off" or not has_audio:
-        return {}
+    """(subtitle files, why there are none). Files are {} when subtitles are off, there's nothing to hear, or
+    anything goes wrong; the reason is shown on the short in the app ("" when subtitles are off)."""
+    if cfg["subtitles"] == "off":
+        return {}, ""
+    if not has_audio:
+        return {}, "No subtitles: this clip has no sound."
     try:
-        return subtitles.prepare(clip, start, length, cfg, cam_height(webcam) if webcam else None, note)
+        files = subtitles.prepare(clip, start, length, cfg, cam_height(webcam) if webcam else None, note)
+        return files, "" if files else "No subtitles: nobody talks in this clip."
+    except subtitles.SubtitleError as e:
+        log(f"SUBS {key}: made without subtitles ({e})")
+        return {}, str(e)
     except Exception as e:  # subtitles are a nice extra: never let them stop a short
         detail = (getattr(e, "stderr", "") or str(e)).strip().splitlines()
-        log(f"SUBS {key}: made without subtitles ({(detail or [type(e).__name__])[-1][:200]})")
-        return {}
+        reason = (detail or [type(e).__name__])[-1][:200]
+        log(f"SUBS {key}: made without subtitles ({reason})")
+        return {}, f"Subtitles didn't work this time ({reason})."
 
 
 def process_clip(clip, key, state, cfg, override=None):
@@ -272,7 +281,7 @@ def process_clip(clip, key, state, cfg, override=None):
     def note(text):   # shown in the app while this clip is being made
         write_json(STATUS, dict(status, note=text, started=time.time()))
 
-    subs = make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note)
+    subs, subs_note = make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note)
     if subs:
         note("Rendering with subtitles")
     try:
@@ -292,6 +301,7 @@ def process_clip(clip, key, state, cfg, override=None):
         "src_duration": round(duration, 2), "labels": [lbl for lbl, _ in overlays],
         "title": (tags or {}).get("title", ""), "champion": (tags or {}).get("champion", ""),
         "trimmed": bool(override) or previous.get("trimmed", False), "subtitled": bool(subs),
+        "subtitles_note": subs_note,
     }
     what = " + ".join(lbl for lbl, _ in overlays) or "untagged"
     log(f"OK   {key} ({what}, {length:.0f}s of {duration:.0f}s) -> {', '.join(outputs)} in {time.time() - t0:.0f}s")

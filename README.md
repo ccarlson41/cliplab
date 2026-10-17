@@ -56,7 +56,7 @@ The [`clipper/`](clipper/README.md) folder watches the game through Riot's offic
 
 ## Subtitles and the intro hook
 Settings (⚙) > **Shorts**:
-- **Subtitles** write what's said in the clip (your voice, your comms) on screen a few words at a time, the way shorts do it. Pick a look (**Bold**, **Pop**, **Boxed** or **Clean**) and where it goes (lower, middle or upper); the preview shows it. Speech-to-text runs on your PC with ffmpeg's built-in whisper filter, so nothing is uploaded. The first subtitled short downloads the speech model once: 150 MB, or 490 MB for **Accurate**. It needs ffmpeg 8 or newer (`winget upgrade Gyan.FFmpeg`); with an older one, shorts are made without subtitles and `logs\engine.log` says why.
+- **Subtitles** write what's said in the clip (your voice, your comms) on screen a few words at a time, the way shorts do it. Pick a look (**Bold**, **Pop**, **Boxed** or **Clean**) and where it goes (lower, middle or upper); the preview shows it. Speech-to-text runs on your PC with ffmpeg's built-in whisper filter, so nothing is uploaded. The first subtitled short downloads the speech model once: 150 MB, or 490 MB for **Accurate**. It needs an ffmpeg with speech-to-text (gyan.dev's full build, ffmpeg 8 or newer). If yours is older, the app says so under **Subtitles**: run ClipLab's setup again (or the install line) and it updates ClipLab's copy of ffmpeg. Each short also says why if it was made without subtitles.
 - **Intro hook** adds a quick whoosh and zoom punch in the first moment of each short, so people scrolling past stop on it (or just the zoom).
 
 In the player, **Ready to post** (P) downloads the short and copies its caption, ready to paste into TikTok, YouTube Shorts or Reels.

@@ -86,7 +86,8 @@ DEFAULTS = {
     },
 }
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
-                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound", "subtitles", "subtitle_style", "subtitle_position", "intro")
+                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound",
+                "subtitles", "subtitle_style", "subtitle_position", "intro")
 CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS, "subtitles": SUBTITLES,
            "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS}
 LIMITS = {

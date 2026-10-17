@@ -43,13 +43,41 @@ if (-not $ok) {
 $pyw = Join-Path (Split-Path $py) 'pyw.exe'
 
 Step 2 'ffmpeg'
+# ClipLab uses the ffmpeg in its own bin folder first, so keep that copy current. Subtitles need a build
+# with speech-to-text (the whisper filter, in gyan.dev "full" builds from ffmpeg 8).
 $bin = Join-Path $Home2 'bin'
-if (-not (Test-Path (Join-Path $bin 'ffmpeg.exe')) -and -not (Have ffmpeg)) {
-  winget install --id Gyan.FFmpeg -e --silent --scope user --accept-package-agreements --accept-source-agreements | Out-Null
-  $found = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-  if (-not $found) { throw 'ffmpeg did not install. Install it (winget install Gyan.FFmpeg) and run setup again.' }
-  New-Item -ItemType Directory -Force $bin | Out-Null
-  Copy-Item (Join-Path $found.DirectoryName 'ffmpeg.exe'), (Join-Path $found.DirectoryName 'ffprobe.exe') $bin -Force
+$binFfmpeg = Join-Path $bin 'ffmpeg.exe'
+$packages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+function Has-Whisper($exe) {
+  if (-not $exe -or -not (Test-Path $exe)) { return $false }
+  $ErrorActionPreference = 'Continue'   # Windows PowerShell turns any stderr line into a stopping error otherwise
+  try { $filters = & $exe -hide_banner -filters 2>$null | Out-String } catch { return $false }
+  return [bool]($filters -match 'whisper\s+A->A')
+}
+function Newest-FFmpeg {   # winget keeps old version folders after an upgrade: take the newest build
+  Get-ChildItem $packages -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match 'Gyan\.FFmpeg' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
+$onPath = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+if (-not (Test-Path $binFfmpeg) -and (Has-Whisper $onPath)) {
+  Write-Host "  Using $onPath"
+} else {
+  $found = Newest-FFmpeg
+  if (-not (Has-Whisper $found.FullName)) {   # none yet, or too old for subtitles: get the current build
+    $verb = if ($found) { 'upgrade' } else { 'install' }
+    winget $verb --id Gyan.FFmpeg -e --silent --scope user --accept-package-agreements --accept-source-agreements | Out-Null
+    $found = Newest-FFmpeg
+  }
+  if (-not $found -and -not (Test-Path $binFfmpeg)) { throw 'ffmpeg did not install. Install it (winget install Gyan.FFmpeg) and run setup again.' }
+  if ($found -and (-not (Test-Path $binFfmpeg) -or -not (Has-Whisper $binFfmpeg) -or
+                   $found.LastWriteTime -gt (Get-Item $binFfmpeg).LastWriteTime)) {
+    New-Item -ItemType Directory -Force $bin | Out-Null
+    Copy-Item (Join-Path $found.DirectoryName 'ffmpeg.exe'), (Join-Path $found.DirectoryName 'ffprobe.exe') $bin -Force
+    Write-Host "  ClipLab's ffmpeg is now $($found.Directory.Parent.Name)."
+  }
+  if (-not (Has-Whisper $binFfmpeg)) {
+    Write-Host '  This ffmpeg has no speech-to-text, so shorts are made without subtitles. Run setup again later to retry.' -ForegroundColor Yellow
+  }
 }
 if ($InstallObs -and -not (Test-Path "$env:ProgramFiles\obs-studio")) {
   winget install --id OBSProject.OBSStudio -e --silent --accept-package-agreements --accept-source-agreements | Out-Null

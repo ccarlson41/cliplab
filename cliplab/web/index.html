@@ -158,6 +158,7 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
 .swatches span { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--raise); box-shadow: 0 0 0 1px var(--line); }
 .swatches input:checked + span { box-shadow: 0 0 0 2px var(--fg); }
 .swatches input:focus-visible + span { outline: 2px solid var(--sun); outline-offset: 3px; }
+.warn-note { color: var(--warn); margin: 0; }
 .subs-pick { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 14px; align-items: start; }
 .subs-pick.off .subs-controls, .subs-pick.off .sub-preview { opacity: .45; }
 .subs-controls { display: grid; gap: 12px; min-width: 0; }
@@ -229,6 +230,7 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
       <div style="display:grid;gap:6px">
         <h3 id="sTitle"></h3>
         <div class="card-sub" id="sSub"></div>
+        <p class="hint warn-note" id="sSubsNote" hidden></p>
       </div>
       <div class="seg" role="group" aria-label="Version" id="seg"></div>
       <div class="actions">
@@ -243,7 +245,7 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
         <button class="btn danger" id="tossYes" type="button">Toss it</button>
         <button class="btn" id="tossNo" type="button">Cancel</button>
       </div>
-      <div class="hint"><kbd>←</kbd> <kbd>→</kbd> browse · <kbd>K</kbd> keep · <kbd>T</kbd> toss · <kbd>D</kbd> download · <kbd>C</kbd> copy · <kbd>1</kbd> <kbd>2</kbd> version</div>
+      <div class="hint"><kbd>←</kbd> <kbd>→</kbd> browse · <kbd>K</kbd> keep · <kbd>T</kbd> toss · <kbd>D</kbd> download · <kbd>C</kbd> copy · <kbd>P</kbd> ready to post · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> version</div>
 
       <div class="trim" id="trimBox">
         <div class="actions" style="justify-content:space-between">
@@ -294,7 +296,8 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
         <input type="text" id="s_watermark" maxlength="40" placeholder="@yourhandle (leave empty for none)"></div>
       <div class="field"><label for="s_subtitles">Subtitles</label>
         <select id="s_subtitles"><option value="off">Off</option><option value="on">On (downloads a 150 MB speech model once)</option><option value="accurate">Accurate (a 490 MB model, a little slower)</option></select>
-        <span class="hint">Puts what's said in the clip (your voice and comms) on screen, a few words at a time. It all happens on this PC; nothing is uploaded.</span></div>
+        <span class="hint">Puts what's said in the clip (your voice and comms) on screen, a few words at a time. It all happens on this PC; nothing is uploaded.</span>
+        <span class="hint warn-note" id="subsWarn" hidden>This PC's ffmpeg can't do speech-to-text, so shorts are made without subtitles. Run ClipLab's setup again to update it.</span></div>
       <div class="subs-pick" id="subsPick">
         <div class="subs-controls">
           <div class="field"><label>Subtitle look</label>
@@ -528,6 +531,8 @@ function fillSheet(loadVideo) {
   $("seg").innerHTML = Object.keys(c.videos).map((k, i) => `<button type="button" data-s="${k}" aria-pressed="${k === v}">${VERSIONS[k] || k} <kbd>${i + 1}</kbd></button>`).join("");
   $("dl").href = `/media/${encodeURI(c.videos[v])}?dl=1`;
   $("sCaption").textContent = c.caption || "(no caption file)";
+  $("sSubsNote").textContent = c.subtitles_note || "";
+  $("sSubsNote").hidden = !c.subtitles_note;
   $("sPaths").innerHTML = Object.entries(c.paths).map(([k, p]) => `<div><span class="label">${esc(k)}</span><code>${esc(p)}</code></div>`).join("");
   $("keep").textContent = c.decision === "keep" ? "Unkeep" : "Keep";
   const idx = order.indexOf(c.key);
@@ -612,6 +617,7 @@ function drawSubPreview() {
   sp.className = `sp-sub ${subLook.style} ${subLook.position}`;
   sp.innerHTML = `<b>${subLook.style === "bold" || subLook.style === "pop" ? "THAT'S A TRIPLE" : "that's a triple"}</b>`;
   $("subsPick").classList.toggle("off", $("s_subtitles").value === "off");
+  $("subsWarn").hidden = $("s_subtitles").value === "off" || state.speech_to_text !== false;
 }
 function drawCamOption() {
   const has = !!((state.config || {}).webcam || {}).rect;
