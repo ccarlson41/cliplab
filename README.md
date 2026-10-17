@@ -1,6 +1,6 @@
 # ClipLab
 
-**Turns your League of Legends and Rainbow Six Siege replays into ready-to-post vertical shorts, automatically.**
+**Turns your gaming replays (League of Legends, Rainbow Six Siege, VALORANT or anything else) into ready-to-post vertical shorts, automatically.**
 
 Save a replay in OBS (or let the auto-clipper catch your multikills), and about a minute later you have 1080×1920 shorts trimmed to the action, with **TRIPLE KILL**-style text on screen and a caption ready to paste. A small web app lets you watch, keep, toss, re-cut and download them, and stitch a game's best plays into a highlight reel.
 
@@ -54,6 +54,16 @@ Add `-AllowLan` to setup to open the app from your phone on the same Wi-Fi.
 ## Auto-clipping League
 The [`clipper/`](clipper/README.md) folder watches the game through Riot's official local [Live Client Data API](https://developer.riotgames.com/docs/lol#game-client-api), saves a replay through OBS on multikills, aces and objective steals, and writes a [tag file](docs/tag-format.md) so ClipLab can trim and label the short. Any other tool can write tag files too; the format is documented.
 
+## Subtitles and the intro hook
+Settings (⚙) > **Shorts**:
+- **Subtitles** write what's said in the clip (your voice, your comms) on screen a few words at a time, the way shorts do it. Pick a look (**Bold**, **Pop**, **Boxed** or **Clean**) and where it goes (lower, middle or upper); the preview shows it. Speech-to-text runs on your PC with ffmpeg's built-in whisper filter, so nothing is uploaded. The first subtitled short downloads the speech model once: 150 MB, or 490 MB for **Accurate**. It needs ffmpeg 8 or newer (`winget upgrade Gyan.FFmpeg`); with an older one, shorts are made without subtitles and `logs\engine.log` says why.
+- **Intro hook** adds a quick whoosh and zoom punch in the first moment of each short, so people scrolling past stop on it (or just the zoom).
+
+In the player, **Ready to post** (P) downloads the short and copies its caption, ready to paste into TikTok, YouTube Shorts or Reels.
+
+## Other games
+Rendering works the same for any game; the **Game** setting only picks the caption hashtags. League of Legends, Rainbow Six Siege and VALORANT are built in. Only League has an auto-clipper (see Auto-clipping League above); for other games, press your OBS *Save Replay* hotkey after a good play.
+
 ## Rainbow Six Siege
 Pick **Rainbow Six Siege** under **Game** in the app's settings (⚙), or run setup with `-Game r6`. Captions then get Siege hashtags instead of League ones, and ClipLab stops waiting for tag files (*Wait for tag file* is set to 0).
 
@@ -74,7 +84,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | | |
 |---|---|
 | **Browse** | Shorts are grouped by game. Filter by play (DOUBLE KILL, ACE…) or by New / Kept. Hover to preview. |
-| **Player** | Switch Blur fill / Center crop, Download, Copy caption, Keep, Toss. Keys: ← → browse · K keep · T toss · D download · C copy · 1 / 2 version. |
+| **Player** | Switch versions, Ready to post, Download, Copy caption, Keep, Toss. Keys: ← → browse · P ready to post · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping. |
@@ -93,8 +103,11 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `allow_lan` | `false` | Let other devices on your home network open the app |
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
 | `setup_done` | `false` | Set when you finish the app's Getting started guide; set it back to `false` to see the guide on its own again |
-| `game` | `league` | `league` or `r6`; sets caption hashtags (a tag file naming its game wins) |
+| `game` | `league` | `league`, `r6` or `valorant`; sets caption hashtags (a tag file naming its game wins) |
 | `theme`, `accent` | `system`, `copper` | The app's look: `system`/`dark`/`light`; `copper`, `blue`, `green`, `purple` or `pink` |
+| `subtitles` | `off` | `off`, `on` or `accurate` (bigger speech model) |
+| `subtitle_style`, `subtitle_position` | `bold`, `lower` | `bold`, `pop`, `boxed` or `clean`; `lower`, `center` or `upper` |
+| `intro` | `off` | `off`, `whoosh` (sound + zoom punch) or `punch` (zoom only) |
 | `save_sound` | `off` | `off`, `chime`, `blip` or `pop`, played when OBS on this PC saves a replay |
 | `webcam` | *(none)* | Where the app placed your webcam in OBS (`rect` as fractions of the canvas, `corner`, `size`); used by the `cam` version |
 | `styles`, `lead_in`, `tail`, `min_seconds`, `max_seconds`, `blur_zoom`, `watermark`, `crf`, `maxrate_mbps`, `tag_wait`, `recycle_tossed_after_days` | | Render settings (also in the app) |

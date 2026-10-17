@@ -32,9 +32,14 @@ THEMES = ("system", "dark", "light")
 ACCENTS = ("copper", "blue", "green", "purple", "pink")
 SAVE_SOUNDS = ("off", "chime", "blip", "pop")   # played when OBS saves a replay (see sounds.py)
 WEBCAM_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+SUBTITLES = ("off", "on", "accurate")             # accurate = the bigger speech model (see subtitles.py)
+SUBTITLE_STYLES = ("bold", "pop", "boxed", "clean")
+SUBTITLE_POSITIONS = ("lower", "center", "upper")
+INTROS = ("off", "whoosh", "punch")               # whoosh = sound + zoom punch; punch = zoom only
 GAMES = {                             # games ClipLab knows: display name (as in tag files) and caption hashtags
     "league": {"name": "League of Legends", "hashtags": "#leagueoflegends #lol"},
     "r6": {"name": "Rainbow Six Siege", "hashtags": "#rainbowsixsiege #r6siege #r6"},
+    "valorant": {"name": "VALORANT", "hashtags": "#valorant #valorantclips"},
 }
 
 DEFAULTS = {
@@ -70,6 +75,10 @@ DEFAULTS = {
     "theme": "system",
     "accent": "copper",
     "save_sound": "off",
+    "subtitles": "off",                    # burned-in captions of what was said; the model downloads on first use
+    "subtitle_style": "bold",
+    "subtitle_position": "lower",
+    "intro": "off",                        # an attention hook in the first moment of each short
     "webcam": {                            # set by the app's OBS settings, which place the webcam in OBS
         "rect": None,                      # [x, y, w, h] as fractions of OBS's canvas; None = no webcam
         "corner": "bottom-left",
@@ -77,8 +86,9 @@ DEFAULTS = {
     },
 }
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
-                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound")
-CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS}
+                "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound", "subtitles", "subtitle_style", "subtitle_position", "intro")
+CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS, "subtitles": SUBTITLES,
+           "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS}
 LIMITS = {
     "lead_in": (0, 15), "tail": (0, 15), "min_seconds": (3, 60), "max_seconds": (10, 180),
     "blur_zoom": (0.4, 1.0), "crf": (16, 30), "maxrate_mbps": (2, 20), "tag_wait": (0, 120),

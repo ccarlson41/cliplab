@@ -17,7 +17,7 @@
 param(
   [string]$WatchDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'Replays'),
   [string]$OutputDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'ClipLab Shorts'),
-  [ValidateSet('league', 'r6')][string]$Game = 'league',
+  [ValidateSet('league', 'r6', 'valorant')][string]$Game = 'league',
   [switch]$AllowLan,
   [switch]$InstallObs,
   [switch]$NoStartup,

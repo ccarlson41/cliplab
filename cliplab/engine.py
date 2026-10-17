@@ -13,8 +13,9 @@ enabled style) plus a caption file, in output_dir/<date>/:
 Originals are never touched.
 
 If a tag file sits next to the clip (<clip>.json, see docs/tag-format.md), the
-shorts are trimmed to the action and its labels are drawn on screen. Settings
-are re-read for every job.
+shorts are trimmed to the action and its labels are drawn on screen. Optional
+extras: burned-in subtitles of what was said (subtitles.py) and an intro hook
+(a whoosh and a quick zoom punch). Settings are re-read for every job.
 """
 import json
 import shutil
@@ -25,8 +26,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import obsctl, obsws, sounds
-from .settings import (FAILED, GAMES, HEARTBEAT, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
+from . import obsctl, obsws, sounds, subtitles
+from .settings import (FAILED, GAMES, HEARTBEAT, HOME, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
                        check_folders, load_config, output_dir, read_json, recycle, tag_path, tool, watch_dir,
                        webcam_rect, write_json)
 
@@ -48,8 +49,8 @@ def log(msg):
         f.write(line + "\n")
 
 
-def run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, creationflags=NO_WINDOW, check=True)
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, capture_output=True, text=True, creationflags=NO_WINDOW, check=True, cwd=cwd)
 
 
 def probe(path, cfg=None):
@@ -161,29 +162,49 @@ def move_in(tmp, dst):
     shutil.move(str(tmp), str(dst))
 
 
+PUNCH = 0.12, 0.3   # the intro zoom: starts this much bigger and settles over this many seconds
+ZOOM = (f"scale=w='1080*(1+{PUNCH[0]}*max(0,1-t/{PUNCH[1]}))':h=-2:eval=frame,crop=1080:1920")
+
+
 def styles_for(cfg, webcam):
     """The enabled styles this clip can have: Webcam on top needs to know where the webcam was."""
     styles = [s for s in cfg["styles"] if s != "cam" or webcam]
     return styles or ["crop"]
 
 
-def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=None):
-    """One ffmpeg pass producing every enabled style. Returns the output file names."""
+def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=None, subs=None):
+    """One ffmpeg pass producing every enabled style. Returns the output file names.
+
+    subs = {"normal": ..., "cam": ...}: subtitle files from subtitles.prepare, relative to HOME (ffmpeg runs there)."""
     styles = styles_for(cfg, webcam)
     n = len(styles)
+    subs = subs or {}
+    whoosh = cfg.get("intro") == "whoosh"
     graph = ["[0:v]" + (f"split={n}" + "".join(f"[v{i}]" for i in range(n)) if n > 1 else "null[v0]")]
     for i, style in enumerate(styles):
         # in Webcam on top, play labels go just under the webcam instead of over your face
         post = post_filters(overlays, cfg, f"{cam_height(webcam) + 50}" if style == "cam" else "h*0.13")
+        sub = subs.get("cam" if style == "cam" else "normal")
+        chain = [ZOOM if cfg.get("intro") in ("whoosh", "punch") else "", f"subtitles=f={sub}" if sub else "", post]
         graph.append(style_graph(style, f"v{i}", f"{style}raw", cfg, webcam))
-        graph.append(f"[{style}raw]{post or 'null'}[{style}v]")
-    if has_audio:
-        graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11," +
-                     (f"asplit={n}" + "".join(f"[a{i}]" for i in range(n)) if n > 1 else "anull[a0]"))
+        graph.append(f"[{style}raw]{','.join(c for c in chain if c) or 'null'}[{style}v]")
+    split = f"asplit={n}" + "".join(f"[a{i}]" for i in range(n)) if n > 1 else "anull[a0]"
+    if has_audio and whoosh:
+        graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[game];"
+                     "[1:a]aresample=48000,volume=0.8[swish];"
+                     f"[game][swish]amix=inputs=2:duration=first:normalize=0,{split}")
+    elif has_audio:
+        graph.append("[0:a]loudnorm=I=-14:TP=-1.5:LRA=11," + split)
+    elif whoosh:   # a silent clip still gets the whoosh, then silence
+        graph.append(f"[1:a]aresample=48000,apad,{split}")
 
     WORK.mkdir(parents=True, exist_ok=True)
     cmd = [str(tool("ffmpeg", cfg)), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{start:.2f}",
-           "-i", str(src), "-filter_complex", ";".join(graph)]
+           "-i", str(src)]
+    if whoosh:
+        cmd += ["-i", str(sounds.whoosh_file())]
+    cmd += ["-filter_complex", ";".join(graph)]
+    has_audio = has_audio or whoosh
     tmps = []
     for i, style in enumerate(styles):
         tmp = WORK / f"{stem}_{style}.mp4"
@@ -193,7 +214,7 @@ def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=N
         cmd += (["-map", f"[a{i}]", "-c:a", "aac", "-b:a", "160k", "-ar", "48000"] if has_audio else ["-an"])
         cmd.append(str(tmp))
         tmps.append(tmp)
-    run(cmd)
+    run(cmd, cwd=HOME)
     out_dir.mkdir(parents=True, exist_ok=True)
     for tmp in tmps:
         move_in(tmp, out_dir / tmp.name)
@@ -221,6 +242,19 @@ def current_webcam(cfg):
     except Exception:  # OBS closed, on another PC, or odd: never let it stop a render
         return cfg["webcam"]["rect"]
 
+
+def make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note):
+    """This short's subtitle files, or {} when they're off, there's no audio, or anything goes wrong."""
+    if cfg["subtitles"] == "off" or not has_audio:
+        return {}
+    try:
+        return subtitles.prepare(clip, start, length, cfg, cam_height(webcam) if webcam else None, note)
+    except Exception as e:  # subtitles are a nice extra: never let them stop a short
+        detail = (getattr(e, "stderr", "") or str(e)).strip().splitlines()
+        log(f"SUBS {key}: made without subtitles ({(detail or [type(e).__name__])[-1][:200]})")
+        return {}
+
+
 def process_clip(clip, key, state, cfg, override=None):
     t0 = time.time()
     previous = state.get(key, {})
@@ -232,8 +266,20 @@ def process_clip(clip, key, state, cfg, override=None):
     start, length, overlays = plan(duration, tags, cfg, override)
     day = previous.get("dir") or datetime.now().strftime("%Y-%m-%d")
     out_dir = output_dir(cfg) / day
-    write_json(STATUS, {"key": key, "styles": styles_for(cfg, webcam), "started": time.time(), "trim": bool(override)})
-    outputs = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg, webcam)
+    status = {"key": key, "styles": styles_for(cfg, webcam), "started": time.time(), "trim": bool(override)}
+    write_json(STATUS, status)
+
+    def note(text):   # shown in the app while this clip is being made
+        write_json(STATUS, dict(status, note=text, started=time.time()))
+
+    subs = make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note)
+    if subs:
+        note("Rendering with subtitles")
+    try:
+        outputs = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg, webcam, subs)
+    finally:
+        for f in subs.values():
+            (HOME / f).unlink(missing_ok=True)
     for stale in set(previous.get("outputs", [])) - set(outputs):   # a style was switched off since last time
         if (out_dir / stale).exists():
             (TOSSED / day).mkdir(parents=True, exist_ok=True)
@@ -245,7 +291,7 @@ def process_clip(clip, key, state, cfg, override=None):
         "dir": day, "length": round(length, 1), "start": round(start, 2), "end": round(start + length, 2),
         "src_duration": round(duration, 2), "labels": [lbl for lbl, _ in overlays],
         "title": (tags or {}).get("title", ""), "champion": (tags or {}).get("champion", ""),
-        "trimmed": bool(override) or previous.get("trimmed", False),
+        "trimmed": bool(override) or previous.get("trimmed", False), "subtitled": bool(subs),
     }
     what = " + ".join(lbl for lbl, _ in overlays) or "untagged"
     log(f"OK   {key} ({what}, {length:.0f}s of {duration:.0f}s) -> {', '.join(outputs)} in {time.time() - t0:.0f}s")

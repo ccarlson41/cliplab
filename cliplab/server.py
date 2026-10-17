@@ -164,6 +164,7 @@ def build_state():
                 continue
             rendering = status.get("key") == key
             items[key] = {"key": key, "stage": "rendering" if rendering else "queued",
+                          "note": status.get("note") if rendering else None,
                           "tagged": (watch / (key + ".json")).exists(),
                           "time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec="seconds")}
 
@@ -377,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(setup_state())
         if route == "/api/obs":
             return self.send_json(obs_state("webcams" in parse_qs(url.query)))
-        if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.TONES:
+        if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.NAMES:
             body = sounds.wav_bytes(route[7:-4])
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")
