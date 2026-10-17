@@ -1,0 +1,83 @@
+[
+ {
+  "version": "0.9.0",
+  "date": "2026-10-17",
+  "title": "Confetti, history and your ideas",
+  "highlights": [
+   {"icon": "🎉", "headline": "This pop-up!", "text": "Whenever ClipLab updates, you get a quick tour of what's new, confetti included."},
+   {"icon": "📜", "headline": "Patch history", "text": "Tap ✨ at the top of the app to look back at every update ClipLab has had."},
+   {"icon": "💡", "headline": "Request a feature", "text": "Got an idea? Send it from the app and it lands straight in the developer's inbox.", "action": "request"},
+   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"}
+  ]
+ },
+ {
+  "version": "0.8.0",
+  "date": "2026-10-17",
+  "title": "Subtitles steal the show",
+  "highlights": [
+   {"icon": "💬", "headline": "Subtitles are here", "text": "ClipLab writes what's said in your clip on screen, a few punchy words at a time, in Bold, Pop, Boxed or Clean, low, middle or up top. It all happens on your PC."},
+   {"icon": "💥", "headline": "Intro hook", "text": "Add a whoosh and a quick zoom punch to the first moment of every short, so people scrolling past stop on it."},
+   {"icon": "🚀", "headline": "Ready to post", "text": "One button (or P) downloads your short and copies its caption, ready to paste into TikTok, YouTube Shorts or Reels."},
+   {"icon": "🎮", "headline": "VALORANT joins the lab", "text": "VALORANT joins League and Siege. Any game works; the game setting just picks your hashtags."}
+  ]
+ },
+ {
+  "version": "0.7.0",
+  "date": "2026-10-17",
+  "title": "OBS at your fingertips",
+  "highlights": [
+   {"icon": "📸", "headline": "Your face, front and center", "text": "Pick your webcam in Settings > OBS and ClipLab puts it in a corner of OBS for you. Every short then gets a Webcam on top version: your reaction across the top, the play below."},
+   {"icon": "🎛️", "headline": "Run OBS from ClipLab", "text": "Choose your mic and which screen OBS records without digging through OBS's menus."},
+   {"icon": "🎨", "headline": "Make it yours", "text": "Light or dark mode, plus five accent colors. Your phone matches automatically."},
+   {"icon": "🔔", "headline": "Hear it save", "text": "Turn on a little chime, blip or pop for whenever your replay hotkey saves a clip."},
+   {"icon": "⏱️", "headline": "Longer shorts", "text": "Shorts can run up to 3 minutes, and the Getting started guide checks OBS keeps enough replay to fill them."}
+  ]
+ },
+ {
+  "version": "0.6.1",
+  "date": "2026-10-15",
+  "title": "Locked the side door",
+  "highlights": [
+   {"icon": "🛡️", "headline": "Safe from sneaky websites", "text": "ClipLab now refuses requests other websites try to send it through your browser, so nothing can toss your clips or change your settings."},
+   {"icon": "👌", "headline": "Nothing for you to do", "text": "The app, your phone on home Wi-Fi and your own scripts keep working just like before."}
+  ]
+ },
+ {
+  "version": "0.6.0",
+  "date": "2026-10-14",
+  "title": "Up and running in one line",
+  "highlights": [
+   {"icon": "⚡", "headline": "One-line installer", "text": "Paste one line into PowerShell and it sets up everything ClipLab needs, then opens the app. Run it again to update."},
+   {"icon": "🧭", "headline": "Getting started guide", "text": "A checklist that reads OBS's settings, ticks off each step and finishes with a test replay."}
+  ]
+ },
+ {
+  "version": "0.5.0",
+  "date": "2026-10-14",
+  "title": "Rainbow Six Siege joins the lab",
+  "highlights": [
+   {"icon": "🎯", "headline": "Rainbow Six Siege", "text": "Pick your game in Settings and captions get Siege hashtags."},
+   {"icon": "🏷️", "headline": "Shorts keep their game", "text": "Re-cuts and reels keep each short's own game, even after you switch."}
+  ]
+ },
+ {
+  "version": "0.4.0",
+  "date": "2026-10-12",
+  "title": "The auto-clipper arrives",
+  "highlights": [
+   {"icon": "🤖", "headline": "League auto-clipper", "text": "Saves a replay for you on multikills, aces, first blood and objective steals."},
+   {"icon": "✂️", "headline": "Trimmed to the action", "text": "Each clip gets a tag file, so its short starts just before the first kill and ends right after the last."}
+  ]
+ },
+ {
+  "version": "0.3.0",
+  "date": "2026-10-11",
+  "title": "ClipLab is born",
+  "highlights": [
+   {"icon": "🎬", "headline": "Replays to vertical shorts", "text": "Save a replay in OBS and about a minute later there's a 1080×1920 short with TRIPLE KILL-style text and a caption ready to paste."},
+   {"icon": "🖼️", "headline": "Two looks per clip", "text": "Blur fill shows the whole fight; Center crop fills the phone screen."},
+   {"icon": "📱", "headline": "The ClipLab app", "text": "Watch, keep, toss, re-cut and download your shorts, and stitch your best plays into highlight reels."},
+   {"icon": "💻", "headline": "One PC or two", "text": "Let a spare laptop do the rendering so your gaming PC doesn't have to."}
+  ]
+ }
+]

@@ -77,6 +77,11 @@ Settings (⚙) > **OBS** changes OBS for you through its built-in WebSocket serv
 
 These work with the OBS on the same PC as ClipLab. In two-PC mode they need ClipLab running on the gaming PC too.
 
+## What's new, ideas and the app icon
+- **What's new:** after each update, ClipLab greets you with a pop-up of what changed (once per device). Tap **✨** at the top of the app any time to see it again, or browse the **Patch history** of every version.
+- **Request a feature:** the ✨ pop-up (or Settings > More) has a short form. It opens a GitHub issue with your idea filled in; press the green button there to send it (needs a free GitHub account).
+- **Install app:** Settings > More > **Install app** (or the button at the top on phones) gives ClipLab its own icon. On this PC, Edge and Chrome install it as an app. On an iPhone, use Safari's Share > Add to Home Screen. Phones reach ClipLab over home Wi-Fi without https, so Android adds a home-screen shortcut that opens in Chrome rather than a full app.
+
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
 
@@ -87,7 +92,8 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | **Player** | Switch versions, Ready to post, Download, Copy caption, Keep, Toss. Keys: ← → browse · P ready to post · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
-| **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping. |
+| **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |
+| **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -103,6 +109,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `allow_lan` | `false` | Let other devices on your home network open the app |
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
 | `setup_done` | `false` | Set when you finish the app's Getting started guide; set it back to `false` to see the guide on its own again |
+| `feedback_url` | *(GitHub)* | Where Request a feature sends people. Empty opens a new GitHub issue on this repo. Set an `http(s)` address (say, a Google Form) to use that instead; `{what}`, `{why}`, `{name}`, `{title}` and `{version}` in it are filled in from the app's form, and without them the app copies the idea for pasting |
 | `game` | `league` | `league`, `r6` or `valorant`; sets caption hashtags (a tag file naming its game wins) |
 | `theme`, `accent` | `system`, `copper` | The app's look: `system`/`dark`/`light`; `copper`, `blue`, `green`, `purple` or `pink` |
 | `subtitles` | `off` | `off`, `on` or `accurate` (bigger speech model) |
@@ -127,6 +134,8 @@ python -m cliplab config   show paths and settings
 - Code: `cliplab/settings.py` (paths, defaults), `engine.py` (rendering, jobs), `server.py` (API), `web/index.html` (the whole UI), `launcher.py`.
 - Tests: `python -m unittest -v` from the repo root (uses a throwaway home folder; the render test needs ffmpeg).
 - The app hands work to the engine by dropping JSON jobs in `requests\`; results land in `requests\done\`.
+- **Every change people can see gets a What's new entry:** bump `__version__` in `cliplab/__init__.py` and add the release to the top of `cliplab/changelog.json` (a fun title and 2–5 highlights, each an emoji, a short headline and one plain sentence). The app shows it once on each device after the update; the tests fail if the newest entry doesn't match `__version__`.
+- App icons: after changing `cliplab/web/icon.svg`, run `python scripts/make_icons.py` to redraw the PNGs (needs Edge or Chrome).
 - Logs: `logs\engine.log`, `logs\launcher.log`.
 
 ## Disclaimer

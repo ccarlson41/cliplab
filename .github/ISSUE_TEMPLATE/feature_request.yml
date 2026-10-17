@@ -1,0 +1,30 @@
+name: Feature request
+description: Ask for something new in ClipLab. The app's Request a feature button fills this in for you.
+title: "[Feature] "
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the idea! Tell us what you'd like ClipLab to do and why it would help.
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like ClipLab to do?
+      placeholder: e.g. Add subtitles to my shorts
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      placeholder: e.g. Most people watch shorts with the sound off
+  - type: input
+    id: name
+    attributes:
+      label: Your name (optional)
+      description: So we can say thanks.
+  - type: input
+    id: version
+    attributes:
+      label: ClipLab version
+      description: Filled in by the app. Settings (⚙) > More shows it too.

@@ -6,7 +6,12 @@
 <title>ClipLab</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#111214">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ClipLab">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 /* Layout: status bar + stats strip, an "on the way" lane, then shorts grouped by game session; a player sheet with a trim editor, a settings sheet, and a Getting started guide */
 :root {
@@ -28,7 +33,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 24px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 60px; display: grid; gap: 24px; }
 
 header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 10px; }
@@ -90,6 +95,86 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .card:focus-visible .thumb, button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
 
 .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 22px; max-width: 62ch; }
+
+/* What's new: the pop-up after each update, the patch history and Request a feature share one dialog. The hero is
+   always a bright gradient with dark text, so it reads the same in both themes; everything under it uses the tokens. */
+dialog#news { width: min(580px, calc(100vw - 24px)); overflow-x: hidden; }
+#news .close { color: #111214; z-index: 3; }
+.news-pop { animation: news-pop .5s cubic-bezier(.2, .9, .3, 1.25) both; }
+@keyframes news-pop { from { opacity: 0; transform: translateY(18px) scale(.94); } }
+#confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
+.news-hero { position: relative; overflow: hidden; padding: 24px 22px 20px; color: #111214; isolation: isolate;
+  background: linear-gradient(115deg, #f6b98a, #f39ac0 25%, #b9a6f5 50%, #86d6cb 75%, color-mix(in srgb, var(--sun) 45%, #fff3e6));
+  background-size: 260% 260%; animation: news-drift 10s ease-in-out infinite; }
+@keyframes news-drift { 50% { background-position: 100% 100%; } }
+.news-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; transform: translateX(-110%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.6) 48%, transparent 66%); animation: news-sheen 5s ease-in-out 1s infinite; }
+@keyframes news-sheen { 45%, 100% { transform: translateX(110%); } }
+.news-eyebrow { margin: 0; font: 700 12px var(--display); letter-spacing: .16em; text-transform: uppercase; }
+.news-hero h3 { font: 700 28px/1.1 var(--display); margin: 6px 0 12px; padding-right: 64px; text-wrap: balance; }
+.news-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font: 600 12px var(--mono); }
+.news-ver { font: 700 12px var(--mono); background: #111214; color: #f6f3ee; padding: 4px 10px; border-radius: 999px; letter-spacing: .04em; }
+.news-burst { position: absolute; right: 22px; bottom: 16px; font-size: 44px; line-height: 1; animation: news-float 3s ease-in-out infinite; filter: drop-shadow(0 4px 8px rgba(17,18,20,.25)); }
+@keyframes news-float { 50% { transform: translateY(-7px) rotate(-6deg); } }
+.spark { position: absolute; left: var(--x); top: var(--y); font-size: var(--s, 12px); color: #fff; opacity: 0; z-index: -1; animation: news-twinkle 2.6s ease-in-out var(--d) infinite; }
+@keyframes news-twinkle { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0); } 50% { opacity: .95; transform: scale(1) rotate(45deg); } }
+.news-tabs { padding: 0 22px; margin-top: 12px; }
+.news-panel { padding: 18px 22px 22px; display: grid; gap: 16px; }
+.news-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.news-card { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); transition: border-color .2s, transform .2s;
+  animation: news-card .55s cubic-bezier(.2, .8, .2, 1.2) both; animation-delay: calc(var(--i) * 110ms + 250ms); }
+.news-card:hover { border-color: color-mix(in srgb, var(--sun) 60%, var(--line)); transform: translateY(-1px); }
+@keyframes news-card { from { opacity: 0; transform: translateY(16px) scale(.96); } }
+.news-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px;
+  background: color-mix(in srgb, var(--sun) 16%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sun) 40%, transparent); }
+.news-card b { display: block; font: 600 15px/1.3 var(--display); }
+.news-card p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.news-card .btn { margin-top: 8px; }
+.news-missed { display: grid; gap: 6px; }
+.news-missed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.news-missed button { background: none; border: 0; padding: 2px 0; color: var(--fg); font: 13px var(--body); cursor: pointer; text-align: left; display: flex; gap: 8px; align-items: baseline; }
+.news-missed button span { font: 12px var(--mono); color: var(--sun); }
+.history { list-style: none; margin: 0; padding: 0 0 0 18px; display: grid; gap: 12px; border-left: 2px solid var(--line); }
+.history > li { position: relative; }
+.history > li::before { content: ""; position: absolute; left: -25px; top: 13px; width: 12px; height: 12px; border-radius: 50%; background: var(--raise); border: 2px solid var(--line); }
+.history > li.current::before { background: var(--sun); border-color: var(--sun); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sun) 25%, transparent); }
+.history details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.history summary { cursor: pointer; padding: 10px 12px; display: flex; gap: 6px 10px; align-items: baseline; flex-wrap: wrap; list-style: none; }
+.history summary::-webkit-details-marker { display: none; }
+.history summary::after { content: "▸"; margin-left: auto; color: var(--muted); transition: transform .2s; }
+.history details[open] summary::after { transform: rotate(90deg); }
+.history summary b { font: 600 14px var(--display); }
+.history summary .label { flex: none; }
+.history summary:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; border-radius: 8px; }
+.history-ver { font: 600 12px var(--mono); color: var(--sun); }
+.history ul { list-style: none; margin: 0; padding: 0 12px 12px; display: grid; gap: 8px; }
+.history ul li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; font-size: 13px; }
+.history ul li span:last-child { color: var(--muted); }
+.history ul li b { color: var(--fg); font-weight: 600; }
+.field textarea { font: 13px var(--body); padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--fg); width: 100%; resize: vertical; min-height: 70px; }
+.field textarea:focus-visible, .field input:focus-visible { outline: 2px solid var(--sun); outline-offset: 1px; }
+.field .hint { font-weight: 400; }
+dialog#install { width: min(560px, calc(100vw - 24px)); }
+.install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.install-steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.install-steps li.here { border-color: var(--sun); }
+.install-steps .news-ico { width: 34px; height: 34px; font-size: 18px; border-radius: 9px; }
+.install-steps b { display: block; }
+.install-steps p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.install-steps .tag { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--sun); margin-left: 6px; }
+.about { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 480px) {
+  .news-hero h3 { font-size: 24px; } .news-burst { font-size: 34px; }
+  .news-panel, .news-hero { padding-left: 16px; padding-right: 16px; }
+  .settabs.news-tabs { padding: 0 16px; flex-wrap: nowrap; gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .settabs.news-tabs button { padding: 8px 8px; font-size: 12.5px; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-pop, .news-hero, .news-burst, .spark, .news-card { animation: none; }
+  .news-hero::after, .spark { display: none; }
+  .news-card, .history summary::after { transition: none; }
+}
 
 dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--fg); padding: 0; width: min(960px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
 dialog::backdrop { background: rgba(0,0,0,.6); }
@@ -193,6 +278,8 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
     <div class="right">
       <span class="pill" id="pMain" hidden><span class="dot"></span>Peer</span>
       <span class="pill" id="pEngine"><span class="dot"></span>Engine</span>
+      <button class="btn small" id="installBtn" type="button" hidden>Install app</button>
+      <button class="icon-btn" id="openNews" type="button" aria-label="What's new" title="What's new">✨</button>
       <button class="icon-btn" id="openSettings" type="button" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
@@ -363,6 +450,14 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
         <div class="field"><label for="s_recycle_tossed_after_days">Recycle tossed after (days)</label><input type="number" id="s_recycle_tossed_after_days" min="1" max="365" step="1"></div>
       </div>
       <div class="actions"><button class="btn" type="button" id="openGuide">Getting started guide</button></div>
+      <div class="about">
+        <span class="label">ClipLab <span id="aboutVer"></span></span>
+        <div class="actions">
+          <button class="btn" type="button" id="moreNews">✨ What's new &amp; patch history</button>
+          <button class="btn" type="button" id="moreRequest">💡 Request a feature</button>
+          <button class="btn" type="button" id="moreInstall">📲 Install app</button>
+        </div>
+      </div>
     </div>
 
     <div class="actions"><button class="btn primary" type="submit">Save settings</button><button class="btn" type="button" id="cancelSettings">Cancel</button></div>
@@ -376,6 +471,58 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
     <p class="hint" style="margin:0">A few OBS settings, then a quick test. The checks update after you press Apply or OK in OBS's settings.</p>
     <ol class="checklist" id="gSteps"></ol>
     <div class="actions"><button class="btn primary" type="button" id="gDone">I'm all set</button><button class="btn" type="button" id="gLater">Later</button></div>
+  </div>
+</dialog>
+
+<dialog id="news" aria-labelledby="newsEyebrow newsTitle">
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <div class="news-pop">
+    <button class="close" id="closeNews" aria-label="Close">×</button>
+    <div class="news-hero">
+      <span class="spark" style="--x:8%;--y:18%;--d:0s;--s:14px" aria-hidden="true">✦</span>
+      <span class="spark" style="--x:46%;--y:10%;--d:.7s" aria-hidden="true">✦</span>
+      <span class="spark" style="--x:64%;--y:62%;--d:1.3s;--s:16px" aria-hidden="true">✦</span>
+      <span class="spark" style="--x:84%;--y:22%;--d:.4s;--s:10px" aria-hidden="true">✦</span>
+      <span class="spark" style="--x:28%;--y:78%;--d:1.9s;--s:10px" aria-hidden="true">✦</span>
+      <p class="news-eyebrow" id="newsEyebrow">What's new in ClipLab</p>
+      <h3 id="newsTitle"></h3>
+      <div class="news-meta"><span class="news-ver" id="newsVer"></span><span id="newsDate"></span></div>
+      <span class="news-burst" id="newsBurst" aria-hidden="true">🎉</span>
+    </div>
+    <div class="settabs news-tabs" role="tablist" id="newsTabs" aria-label="What's new">
+      <button type="button" role="tab" id="tab-latest" data-tab="latest" aria-controls="np-latest">What's new</button>
+      <button type="button" role="tab" id="tab-history" data-tab="history" aria-controls="np-history">Patch history</button>
+      <button type="button" role="tab" id="tab-request" data-tab="request" aria-controls="np-request">Request a feature</button>
+    </div>
+    <div class="news-panel" id="np-latest" role="tabpanel" aria-labelledby="tab-latest">
+      <ul class="news-cards" id="newsCards"></ul>
+      <div class="news-missed" id="newsMissed" hidden><span class="label">Also new since your last visit</span><ul id="newsMissedList"></ul></div>
+      <div class="actions"><button class="btn primary" type="button" id="newsOk">Let's go!</button></div>
+    </div>
+    <div class="news-panel" id="np-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <ol class="history" id="newsHistory"></ol>
+    </div>
+    <form class="news-panel" id="np-request" role="tabpanel" aria-labelledby="tab-request" hidden>
+      <p class="hint" style="margin:0">Missing something? Tell us what would make ClipLab better for you.</p>
+      <div class="field"><label for="r_what">What would you like ClipLab to do?</label>
+        <textarea id="r_what" rows="3" maxlength="800" required placeholder="e.g. Add subtitles to my shorts"></textarea></div>
+      <div class="field"><label for="r_why">Why would it help? <span class="hint">(optional)</span></label>
+        <textarea id="r_why" rows="3" maxlength="800" placeholder="e.g. Most people watch shorts with the sound off"></textarea></div>
+      <div class="field"><label for="r_name">Your name <span class="hint">(optional)</span></label>
+        <input type="text" id="r_name" maxlength="60" autocomplete="nickname"></div>
+      <p class="hint" style="margin:0" id="requestWhere"></p>
+      <div class="actions"><button class="btn primary" type="submit" id="requestSend">Send my idea</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="install" aria-labelledby="installTitle">
+  <button class="close" id="closeInstall" aria-label="Close">×</button>
+  <div class="form">
+    <h3 id="installTitle">Install ClipLab</h3>
+    <p class="hint" style="margin:0">Give ClipLab its own icon, so it opens like any other app.</p>
+    <ul class="install-steps" id="installSteps"></ul>
+    <div class="actions"><button class="btn primary" type="button" id="installOk">Got it</button></div>
   </div>
 </dialog>
 
@@ -518,6 +665,7 @@ function render() {
   seenResults = new Set((s.results || []).map(r => r.id));
   if (open) fillSheet(false);
   if (s.setup_needed && !guide.shown && !document.querySelector("dialog[open]")) openGuide();
+  checkNews();
 }
 
 /* ---------- player sheet ---------- */
@@ -728,6 +876,195 @@ function drawGuide() {
   }).join("");
   if (html !== guide.html) { $("gSteps").innerHTML = html; guide.html = html; }   // redraw only on change, so focus isn't lost
 }
+
+/* ---------- what's new, patch history, request a feature ---------- */
+// The pop-up shows once per new version on each device (the last version seen is kept in localStorage). A brand-new
+// install gets the Getting started guide instead, and a page left open reloads itself when ClipLab is updated.
+let news = { data: null, page: null, busy: false, opener: null, raf: 0 };
+const ACTIONS = { install: "Install it", request: "Share an idea", history: "See the history" };
+const vparts = v => String(v || "0").split(".").map(n => parseInt(n, 10) || 0);
+function newer(a, b) {
+  const x = vparts(a), y = vparts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+}
+const relDay = iso => { const [y, m, d] = String(iso).split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
+function seenVersion() { try { return localStorage.getItem("cl-seen-version"); } catch (e) { return undefined; } }
+function markSeen(v) { try { localStorage.setItem("cl-seen-version", v); } catch (e) {} }
+async function loadNews() {
+  try { const r = await fetch("/api/changelog", { cache: "no-store" }); if (r.ok) news.data = await r.json(); } catch (e) {}
+  return news.data;
+}
+async function checkNews() {
+  const v = state.version, busy = !!document.querySelector("dialog[open]");
+  if (!v || news.busy) return;
+  $("aboutVer").textContent = "v" + v;
+  if (news.page == null) news.page = v;
+  else if (news.page !== v) { if (!busy) location.reload(); return; }   // updated while open: get the new page
+  const seen = seenVersion();
+  if (seen === undefined || (seen && !newer(v, seen))) return;   // storage blocked, or nothing new on this device
+  if (state.setup_needed) return markSeen(v);   // brand-new install: the guide is enough
+  if (busy) return;   // wait until the guide or a short is closed
+  news.busy = true;
+  if (!news.data || news.data.version !== v) await loadNews();
+  news.busy = false;
+  if (!news.data || document.querySelector("dialog[open]")) return;
+  markSeen(v);
+  openNews("latest", { since: seen, party: true });
+}
+
+function newsCard(h, i) {
+  const act = ACTIONS[h.action] ? `<button class="btn small" type="button" data-act="${esc(h.action)}">${ACTIONS[h.action]}</button>` : "";
+  return `<li class="news-card" style="--i:${i}"><span class="news-ico" aria-hidden="true">${esc(h.icon)}</span><div><b>${esc(h.headline)}</b><p>${esc(h.text)}</p>${act}</div></li>`;
+}
+function drawNews(opts) {
+  const d = news.data, rel = d.releases || [], latest = rel[0] || { version: d.version, title: "ClipLab", highlights: [] };
+  $("newsEyebrow").textContent = opts.party ? "ClipLab has been updated!" : "What's new in ClipLab";
+  $("newsBurst").textContent = opts.party ? "🎉" : "✨";
+  $("newsTitle").textContent = latest.title;
+  $("newsVer").textContent = "v" + latest.version;
+  $("newsDate").textContent = latest.date ? relDay(latest.date) : "";
+  $("newsCards").innerHTML = (latest.highlights || []).map(newsCard).join("");
+  const missed = opts.since ? rel.slice(1).filter(r => newer(r.version, opts.since)) : [];
+  $("newsMissed").hidden = !missed.length;
+  $("newsMissedList").innerHTML = missed.map(r => `<li><button type="button" data-ver="${esc(r.version)}"><span>v${esc(r.version)}</span>${esc(r.title)}</button></li>`).join("");
+  $("newsHistory").innerHTML = rel.map((r, i) => `<li class="${r.version === d.version ? "current" : ""}"><details data-ver="${esc(r.version)}"${i === 0 ? " open" : ""}>
+    <summary><span class="history-ver">v${esc(r.version)}</span><b>${esc(r.title)}</b><span class="label">${esc(relDay(r.date))}${r.version === d.version ? " · you're on this one" : ""}</span></summary>
+    <ul>${(r.highlights || []).map(h => `<li><span aria-hidden="true">${esc(h.icon)}</span><span><b>${esc(h.headline)}${/[.!?]$/.test(h.headline) ? "" : "."}</b> ${esc(h.text)}</span></li>`).join("")}</ul></details></li>`).join("");
+  const custom = d.feedback_to === "custom", blanks = /\{(title|what|why|name|version)\}/.test(d.feedback_url || "");
+  $("requestWhere").textContent = !custom
+    ? "This opens GitHub with your idea filled in. Press the green button there to send it (you'll need a free GitHub account). It lands straight in the developer's inbox."
+    : blanks ? "This opens the feedback form with your idea filled in. Send it from there." : "This opens the feedback form and copies your idea, so you can paste it in.";
+  $("requestSend").textContent = custom ? "Open the feedback form" : "Open GitHub to send it";
+}
+function showNewsTab(name, focus) {
+  for (const b of $("newsTabs").querySelectorAll("[role=tab]")) {
+    const on = b.dataset.tab === name;
+    b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+    $(b.getAttribute("aria-controls")).hidden = !on;
+    if (on && focus) b.focus();
+  }
+}
+async function openNews(tab, opts = {}) {
+  if (!news.data && !(await loadNews())) return toast("Can't load what's new right now.", true);
+  drawNews(opts);
+  showNewsTab(tab);
+  if (!$("news").open) { news.opener = document.activeElement; $("news").showModal(); }
+  if (tab === "request") $("r_what").focus();
+  if (opts.party) confetti();
+}
+function openRelease(version) {
+  showNewsTab("history");
+  const det = $("newsHistory").querySelector(`details[data-ver="${CSS.escape(version)}"]`);
+  if (det) { det.open = true; det.querySelector("summary").focus(); det.scrollIntoView({ block: "nearest" }); }
+}
+
+function confetti() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c = $("confetti"), ctx = c.getContext("2d"), dpr = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const box = $("news").getBoundingClientRect(), x0 = box.left + box.width / 2, y0 = box.top + 70;
+  const colors = ["#f6b98a", "#f39ac0", "#b9a6f5", "#86d6cb", "#ffd66b", getComputedStyle(document.documentElement).getPropertyValue("--sun").trim()];
+  const bits = Array.from({ length: 150 }, () => {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, speed = 7 + Math.random() * 10;
+    return { x: x0 + (Math.random() - 0.5) * 120, y: y0, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: Math.random() * 6.3,
+             vr: (Math.random() - 0.5) * 0.35, w: 6 + Math.random() * 6, h: 9 + Math.random() * 7, c: colors[Math.random() * colors.length | 0], dot: Math.random() < 0.25 };
+  });
+  cancelAnimationFrame(news.raf);
+  let last = performance.now(); const start = last;
+  const frame = now => {
+    const dt = Math.min(3, (now - last) / 16.7), age = (now - start) / 1000; last = now;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = Math.max(0, Math.min(1, 3.4 - age));
+    for (const b of bits) {
+      b.vy += 0.32 * dt; b.vx *= Math.pow(0.985, dt); b.vy *= Math.pow(0.985, dt);
+      b.x += b.vx * dt; b.y += b.vy * dt; b.r += b.vr * dt;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.c;
+      if (b.dot) { ctx.beginPath(); ctx.arc(0, 0, b.w / 2, 0, 6.3); ctx.fill(); }
+      else ctx.fillRect(-b.w / 2, -b.h / 2, b.w, Math.max(1, b.h * Math.abs(Math.cos(b.r * 1.7))));
+      ctx.restore();
+    }
+    if (age < 3.4 && $("news").open) news.raf = requestAnimationFrame(frame); else ctx.clearRect(0, 0, W, H);
+  };
+  news.raf = requestAnimationFrame(frame);
+}
+
+function sendRequest(e) {
+  e.preventDefault();
+  const d = news.data, what = $("r_what").value.trim();
+  if (!what) { $("r_what").focus(); return toast("Tell us what you'd like first", true); }
+  const fields = { what, why: $("r_why").value.trim(), name: $("r_name").value.trim(), version: d.version,
+                   title: "[Feature] " + what.split("\n")[0].slice(0, 70) };
+  const url = d.feedback_url.replace(/\{(title|what|why|name|version)\}/g, (_, k) => encodeURIComponent(fields[k]));
+  if (url === d.feedback_url) {   // a form that can't be filled in from its address: copy the idea to paste in
+    const text = `${fields.what}${fields.why ? "\n\nWhy: " + fields.why : ""}${fields.name ? "\n\nFrom: " + fields.name : ""}\n\nClipLab v${d.version}`;
+    navigator.clipboard && navigator.clipboard.writeText(text).catch(() => {});
+  }
+  window.open(url, "_blank", "noopener");
+  toast(d.feedback_to === "custom" ? "Opened the feedback form. Thanks for the idea!" : "Opened GitHub. Press the green button there to send it. Thanks!");
+}
+
+/* ---------- install as an app ---------- */
+let installEvent = null;
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const device = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "ios"
+  : /Android/i.test(navigator.userAgent) ? "android" : "pc";
+const INSTALL_HOW = {
+  pc: ["💻", "This PC: Edge or Chrome", "Click the install icon at the right end of the address bar. Or open the browser menu: in Edge (⋯) pick Apps › Install this site as an app; in Chrome (⋮) pick Cast, save, and share › Install page as app."],
+  ios: ["📱", "iPhone or iPad: Safari", "Tap Share (the square with an arrow), then Add to Home Screen."],
+  android: ["🤖", "Android: Chrome", "Tap ⋮, then Add to Home screen. Your phone reaches ClipLab over home Wi-Fi without https, so Android adds a home-screen shortcut that opens ClipLab in Chrome, not a full app."],
+};
+function drawInstall() {
+  $("installBtn").hidden = standalone() || !(installEvent || device() !== "pc");
+  $("moreInstall").hidden = standalone();
+}
+async function installApp() {
+  if (installEvent) {   // Edge and Chrome on this PC: their own install prompt
+    const e = installEvent; installEvent = null;
+    e.prompt();
+    await e.userChoice.catch(() => null);
+    return drawInstall();
+  }
+  const here = device();
+  $("installSteps").innerHTML = [here, ...Object.keys(INSTALL_HOW).filter(k => k !== here)].map(k => {
+    const [icon, title, how] = INSTALL_HOW[k];
+    return `<li class="${k === here ? "here" : ""}"><span class="news-ico" aria-hidden="true">${icon}</span><div><b>${title}${k === here ? '<span class="tag">This device</span>' : ""}</b><p>${how}</p></div></li>`;
+  }).join("");
+  $("install").showModal();
+}
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvent = e; drawInstall(); });
+addEventListener("appinstalled", () => { installEvent = null; drawInstall(); toast("ClipLab is installed"); });
+drawInstall();
+
+$("openNews").addEventListener("click", () => openNews("latest"));
+$("closeNews").addEventListener("click", () => $("news").close());
+$("newsOk").addEventListener("click", () => $("news").close());
+$("news").addEventListener("close", () => {
+  cancelAnimationFrame(news.raf); $("confetti").getContext("2d").clearRect(0, 0, $("confetti").width, $("confetti").height);
+  if (news.opener && news.opener.isConnected) news.opener.focus();
+  news.opener = null;
+});
+$("newsTabs").addEventListener("click", e => { const b = e.target.closest("[role=tab]"); if (b) showNewsTab(b.dataset.tab); });
+$("newsTabs").addEventListener("keydown", e => {   // arrow keys move between tabs
+  const tabs = [...$("newsTabs").querySelectorAll("[role=tab]")], i = tabs.indexOf(document.activeElement);
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (i < 0 || to === undefined) return;
+  e.preventDefault(); showNewsTab(tabs[(to + tabs.length) % tabs.length].dataset.tab, true);
+});
+$("newsCards").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  if (b.dataset.act === "install") installApp();
+  else showNewsTab(b.dataset.act, true);
+  if (b.dataset.act === "request") $("r_what").focus();
+});
+$("newsMissedList").addEventListener("click", e => { const b = e.target.closest("[data-ver]"); if (b) openRelease(b.dataset.ver); });
+$("np-request").addEventListener("submit", sendRequest);
+$("installBtn").addEventListener("click", installApp);
+$("closeInstall").addEventListener("click", () => $("install").close());
+$("installOk").addEventListener("click", () => $("install").close());
+$("moreNews").addEventListener("click", () => { $("settings").close(); openNews("latest"); });
+$("moreRequest").addEventListener("click", () => { $("settings").close(); openNews("request"); });
+$("moreInstall").addEventListener("click", installApp);
 
 /* ---------- data ---------- */
 async function refresh() {
