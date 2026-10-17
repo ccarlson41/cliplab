@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import obs, obsctl, obsws, sounds
+from . import obs, obsctl, obsws, sounds, subtitles
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
                        TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json, tool,
                        watch_dir, webcam_rect, write_json)
@@ -164,6 +164,7 @@ def build_state():
                 continue
             rendering = status.get("key") == key
             items[key] = {"key": key, "stage": "rendering" if rendering else "queued",
+                          "note": status.get("note") if rendering else None,
                           "tagged": (watch / (key + ".json")).exists(),
                           "time": datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec="seconds")}
 
@@ -208,7 +209,7 @@ def build_state():
             "caption": caption_path.read_text(encoding="utf-8") if caption_path.exists() else "",
             "start": entry.get("start"), "end": entry.get("end"), "src_duration": entry.get("src_duration"),
             "raw": quote(key.replace("\\", "/")) if raw and raw.exists() else None,
-            "trimmed": entry.get("trimmed", False),
+            "trimmed": entry.get("trimmed", False), "subtitles_note": entry.get("subtitles_note") or "",
             "busy": status.get("key") == key or any(r.get("key") == key for r in pending),
             "paths": paths,
         }
@@ -229,6 +230,7 @@ def build_state():
     return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
             "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
             "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
+            "speech_to_text": subtitles.ffmpeg_has_whisper(cfg),   # checked once, then cached
             "queue": len(pending),
             "now": datetime.now().isoformat(timespec="seconds")}
 
@@ -388,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(build_state())
         if route == "/api/setup":
             return self.send_json(setup_state())
-        if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.TONES:
+        if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.NAMES:
             body = sounds.wav_bytes(route[7:-4])
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")

@@ -44,7 +44,9 @@
     Write-Host 'Which game do you play?'
     Write-Host '  1  League of Legends'
     Write-Host '  2  Rainbow Six Siege'
-    $game = if ((Ask 'Pick 1 or 2' '1') -eq '2') { 'r6' } else { 'league' }
+    Write-Host '  3  VALORANT'
+    $game = @{ '2' = 'r6'; '3' = 'valorant' }[(Ask 'Pick 1, 2 or 3' '1')]
+    if (-not $game) { $game = 'league' }
     Write-Host ''
     Write-Host 'Where should OBS save replays? ClipLab watches this folder. Press Enter for the suggestion.'
     while ($true) {
