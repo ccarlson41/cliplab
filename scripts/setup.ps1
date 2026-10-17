@@ -71,8 +71,25 @@ if (-not (Test-Path $binFfmpeg) -and (Has-Whisper $onPath)) {
   if (-not $found -and -not (Test-Path $binFfmpeg)) { throw 'ffmpeg did not install. Install it (winget install Gyan.FFmpeg) and run setup again.' }
   if ($found -and (-not (Test-Path $binFfmpeg) -or -not (Has-Whisper $binFfmpeg) -or
                    $found.LastWriteTime -gt (Get-Item $binFfmpeg).LastWriteTime)) {
+    if (Test-Path $binFfmpeg) {
+      # A running ClipLab may be using this ffmpeg right now (a render, a thumbnail), and Windows won't replace a
+      # file in use: stop ClipLab while it's swapped. Step 5 starts it again.
+      $ErrorActionPreference = 'Continue'
+      Push-Location $Repo
+      & $py -3 -m cliplab stop 2>$null | Out-Null
+      Pop-Location
+      $ErrorActionPreference = 'Stop'
+    }
     New-Item -ItemType Directory -Force $bin | Out-Null
-    Copy-Item (Join-Path $found.DirectoryName 'ffmpeg.exe'), (Join-Path $found.DirectoryName 'ffprobe.exe') $bin -Force
+    $copied = $false
+    foreach ($try in 1..10) {   # a just-stopped ffmpeg can hold the file for a moment
+      try {
+        Copy-Item (Join-Path $found.DirectoryName 'ffmpeg.exe'), (Join-Path $found.DirectoryName 'ffprobe.exe') $bin -Force
+        $copied = $true
+        break
+      } catch { Start-Sleep -Milliseconds 500 }
+    }
+    if (-not $copied) { throw "Something is still using $binFfmpeg. Close it (or restart the PC) and run setup again." }
     Write-Host "  ClipLab's ffmpeg is now $($found.Directory.Parent.Name)."
   }
   if (-not (Has-Whisper $binFfmpeg)) {
