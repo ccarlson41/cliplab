@@ -13,7 +13,7 @@ import unittest
 from datetime import date
 from http.server import ThreadingHTTPServer
 
-os.environ.setdefault("CLIPLAB_HOME", tempfile.mkdtemp(prefix="cliplab-test-"))
+os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import __version__, server  # noqa: E402
 from cliplab.settings import CONFIG, HOME, WEB, load_config, web_address, write_json  # noqa: E402

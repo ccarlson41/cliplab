@@ -79,7 +79,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | | |
 |---|---|
 | **Browse** | Shorts are grouped by game. Filter by play (DOUBLE KILL, ACE…) or by New / Kept. Hover to preview. |
-| **Player** | Switch Blur fill / Center crop, Download, Copy caption, Keep, Toss. Keys: ← → browse · K keep · T toss · D download · C copy · 1 / 2 version. |
+| **Player** | Switch Blur fill / Center crop, Download, Copy caption, Keep, Toss. Keys: ← → browse · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |

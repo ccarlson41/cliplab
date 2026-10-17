@@ -16,7 +16,7 @@ import unittest
 import wave
 from http.server import ThreadingHTTPServer
 
-os.environ.setdefault("CLIPLAB_HOME", tempfile.mkdtemp(prefix="cliplab-test-"))
+os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import engine, obsctl, obsws, server, sounds  # noqa: E402
 from cliplab.settings import CONFIG, DEFAULTS, clean_config, load_config, webcam_rect, write_json  # noqa: E402
@@ -148,8 +148,8 @@ class PretendObs:
         self.items = []       # [{"sourceName", "inputKind", "sceneItemId", "sceneItemEnabled"}] in back-to-front order
         self.transforms = {}
         self.calls = []
-        for name, kind in global_inputs:
-            self.inputs[name] = {"kind": kind, "settings": {}}
+        for name, kind, *settings in global_inputs:   # inputs that live in other scenes (names are global)
+            self.inputs[name] = {"kind": kind, "settings": dict(settings[0]) if settings else {}}
         for name, kind in items:
             self.add(name, kind, {})
 
@@ -164,10 +164,15 @@ class PretendObs:
 
     def add(self, name, kind, settings, enabled=True):
         self.inputs[name] = {"kind": kind, "settings": dict(settings)}
+        return self.place(name, enabled)
+
+    def place(self, name, enabled=True):
         sid = len(self.transforms) + 1
-        self.items.append({"sourceName": name, "inputKind": kind, "sceneItemId": sid, "sceneItemEnabled": enabled})
+        self.items.append({"sourceName": name, "inputKind": self.inputs[name]["kind"], "sceneItemId": sid,
+                           "sceneItemEnabled": enabled})
         self.transforms[sid] = {"positionX": 0, "positionY": 0, "alignment": 5, "boundsType": "OBS_BOUNDS_NONE",
-                                "width": 1920, "height": 1080, "sourceWidth": 1920, "sourceHeight": 1080}
+                                "scaleX": 1, "scaleY": 1, "width": 1920, "height": 1080, "sourceWidth": 1920,
+                                "sourceHeight": 1080, "cropLeft": 0, "cropRight": 0, "cropTop": 0, "cropBottom": 0}
         return sid
 
     def item(self, sid):
@@ -195,6 +200,10 @@ class PretendObs:
                 raise obsws.ObsError("name taken")
             return {"sceneItemId": self.add(data["inputName"], data["inputKind"], data["inputSettings"],
                                             data.get("sceneItemEnabled", True))}
+        if kind == "CreateSceneItem":
+            if data["sourceName"] not in self.inputs:
+                raise obsws.ObsError("no such source")
+            return {"sceneItemId": self.place(data["sourceName"])}
         if kind == "RemoveInput":
             if data["inputName"] not in self.inputs:
                 raise obsws.ObsError("no such input")
@@ -239,7 +248,7 @@ class ObsControlTests(unittest.TestCase):
 
     def test_apply_mic_and_new_screen_capture_goes_behind_the_game(self):
         obs = PretendObs(items=[("League", "game_capture")], global_inputs=[("Mic/Aux", "wasapi_input_capture")])
-        self.assertEqual(obsctl.apply({"mic": "mic2", "display": "m2"}, obs_factory=obs), "unchanged")
+        self.assertEqual(obsctl.apply({"mic": "mic2", "display": "m2"}, obs_factory=obs), ("unchanged", ""))
         self.assertEqual(obs.inputs["Mic/Aux"]["settings"]["device_id"], "mic2")
         self.assertEqual(obs.inputs["Display"]["settings"]["monitor_id"], "m2")
         self.assertEqual([i["sourceName"] for i in obs.items], ["Display", "League"])
@@ -251,19 +260,77 @@ class ObsControlTests(unittest.TestCase):
 
     def test_apply_webcam_places_it_on_top_in_the_corner(self):
         obs = PretendObs(items=[("League", "game_capture")])
-        rect = obsctl.apply({"webcam": {"device": "cam1", "corner": "top-right", "size": 0.25}}, obs_factory=obs)
-        self.assertEqual(rect, [0.75, 0.0, 0.25, 0.25 * 1920 * 9 / 16 / 1080])
+        rect, note = obsctl.apply({"webcam": {"device": "cam1", "corner": "top-right", "size": 0.25}}, obs_factory=obs)
+        self.assertEqual((rect, note), ([0.75, 0.0, 0.25, 0.25 * 1920 * 9 / 16 / 1080], ""))
         self.assertEqual(obs.items[-1]["sourceName"], "ClipLab Webcam")
         self.assertEqual(obs.inputs["ClipLab Webcam"]["settings"]["video_device_id"], "cam1")
-        # OBS reports a 4:3 camera letterboxed in its 16:9 box: the rect is just the picture
+        # a 4:3 camera in its 16:9 box sits flush in the chosen corner, and the rect is just the picture
         sid = obs.items[-1]["sceneItemId"]
+        self.assertEqual(obs.transforms[sid]["boundsAlignment"], 6)   # top-right
         obs.transforms[sid].update(sourceWidth=640, sourceHeight=480)
         live = obsctl.live_webcam_rect(obs_factory=obs)
         self.assertAlmostEqual(live[2], (270 * 4 / 3) / 1920)
-        self.assertAlmostEqual(live[0], (1440 + (480 - 360) / 2) / 1920)
-        self.assertIsNone(obsctl.apply({"webcam": {"device": "", "corner": "top-right", "size": 0.25}}, obs_factory=obs))
+        self.assertAlmostEqual(live[0] + live[2], 1.0)                  # touching the right edge, no gap
+        self.assertEqual(obsctl.apply({"webcam": {"device": "", "corner": "top-right", "size": 0.25}}, obs_factory=obs),
+                         (None, ""))
         self.assertFalse(obs.items[-1]["sceneItemEnabled"])
         self.assertIsNone(obsctl.live_webcam_rect(obs_factory=obs))
+
+    def test_inputs_from_other_scenes_are_added_not_recreated(self):
+        # "ClipLab Webcam" was placed in another scene earlier, and "Display" is an image someone named that
+        obs = PretendObs(items=[("League", "game_capture")],
+                         global_inputs=[("ClipLab Webcam", "dshow_input", {"video_device_id": "cam1"}),
+                                        ("Display", "image_source")])
+        rect, _ = obsctl.apply({"webcam": {"device": "cam1", "corner": "bottom-left", "size": 0.25}}, obs_factory=obs)
+        self.assertEqual(obs.items[-1]["sourceName"], "ClipLab Webcam")
+        self.assertEqual(sum(1 for n in obs.inputs if n.startswith("ClipLab Webcam")), 1)
+        self.assertAlmostEqual(rect[1] + rect[3], 1.0)   # flush with the bottom
+        obsctl.apply({"display": "m1"}, obs_factory=obs)
+        self.assertEqual(obs.inputs["Display 2"]["settings"]["monitor_id"], "m1")
+        self.assertEqual(obs.items[0]["sourceName"], "Display 2")
+
+    def test_your_own_webcam_source_is_reused(self):
+        obs = PretendObs(items=[("League", "game_capture")],
+                         global_inputs=[("Facecam", "dshow_input", {"video_device_id": "cam1"})])
+        rect, note = obsctl.apply({"webcam": {"device": "cam1", "corner": "top-left", "size": 0.2}}, obs_factory=obs)
+        self.assertNotIn("ClipLab Webcam", obs.inputs)   # a second capture of the same camera would go black
+        self.assertEqual(obs.items[-1]["sourceName"], "Facecam")
+        self.assertIn('"Facecam"', note)
+        self.assertEqual(rect[:2], [0.0, 0.0])
+
+    def test_cropped_webcam(self):
+        # a 1080p camera cropped 480 px each side: 960x1080 of picture
+        t = {"positionX": 0, "positionY": 810, "alignment": 5, "boundsType": "OBS_BOUNDS_NONE", "scaleX": 0.25,
+             "scaleY": 0.25, "width": 480, "height": 270, "sourceWidth": 1920, "sourceHeight": 1080,
+             "cropLeft": 480, "cropRight": 480, "cropTop": 0, "cropBottom": 0}
+        self.assertEqual(obsctl.item_rect(t, 1920, 1080), [0.0, 0.75, 240 / 1920, 0.25])
+        # the same crop fitted into a 480x270 box, centered: 240x270 in the middle of the box
+        t.update(boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=480, boundsHeight=270, boundsAlignment=0)
+        self.assertEqual(obsctl.item_rect(t, 1920, 1080), [120 / 1920, 0.75, 240 / 1920, 0.25])
+
+    def test_every_bounds_type(self):
+        base = {"positionX": 0, "positionY": 0, "alignment": 5, "boundsAlignment": 5, "boundsWidth": 480,
+                "boundsHeight": 270, "sourceWidth": 640, "sourceHeight": 480}   # a 4:3 camera in a 16:9 box
+        def size(kind, **extra):
+            r = obsctl.item_rect(dict(base, boundsType=kind, **extra), 1920, 1080)
+            return round(r[2] * 1920), round(r[3] * 1080)
+        self.assertEqual(size("OBS_BOUNDS_STRETCH"), (480, 270))
+        self.assertEqual(size("OBS_BOUNDS_SCALE_INNER"), (360, 270))
+        self.assertEqual(size("OBS_BOUNDS_SCALE_OUTER"), (480, 360))
+        self.assertEqual(size("OBS_BOUNDS_SCALE_OUTER", cropToBounds=True), (480, 270))
+        self.assertEqual(size("OBS_BOUNDS_SCALE_TO_WIDTH"), (480, 360))
+        self.assertEqual(size("OBS_BOUNDS_SCALE_TO_HEIGHT"), (360, 270))
+        self.assertEqual(size("OBS_BOUNDS_MAX_ONLY"), (360, 270))
+        self.assertEqual(size("OBS_BOUNDS_MAX_ONLY", boundsWidth=1280, boundsHeight=720), (640, 480))   # never grows
+
+    def test_a_webcam_hanging_off_the_canvas_is_clipped(self):
+        t = {"positionX": 1800, "positionY": 900, "alignment": 5, "boundsType": "OBS_BOUNDS_NONE", "scaleX": 0.25,
+             "scaleY": 0.25, "sourceWidth": 1920, "sourceHeight": 1080, "width": 480, "height": 270}
+        rect = obsctl.item_rect(t, 1920, 1080)
+        self.assertEqual([round(v, 4) for v in rect], [0.9375, round(900 / 1080, 4), 0.0625, round(180 / 1080, 4)])
+        self.assertIsNotNone(webcam_rect(rect))           # still usable
+        t.update(positionX=2000)
+        self.assertIsNone(webcam_rect(obsctl.item_rect(t, 1920, 1080)))   # entirely off the canvas
 
     def test_item_rect_follows_obs_alignment(self):
         # centered item without bounds: position is its middle
@@ -327,13 +394,13 @@ class ObsEndpointTests(unittest.TestCase):
     def test_placing_and_removing_the_webcam_updates_versions(self):
         original = obsctl.apply
         try:
-            obsctl.apply = lambda changes: [0, 0.75, 0.25, 0.25]
+            obsctl.apply = lambda changes: ([0, 0.75, 0.25, 0.25], "")
             cam = {"device": "cam1", "corner": "bottom-left", "size": 0.25}
             self.assertEqual(self.post({"webcam": cam})[0], 200)
             cfg = load_config()
             self.assertEqual(cfg["webcam"]["rect"], [0, 0.75, 0.25, 0.25])
             self.assertEqual(cfg["styles"], ["blur", "crop", "cam"])
-            obsctl.apply = lambda changes: None
+            obsctl.apply = lambda changes: (None, "")
             self.assertEqual(self.post({"webcam": dict(cam, device="")})[0], 200)
             cfg = load_config()
             self.assertIsNone(cfg["webcam"]["rect"])
@@ -348,6 +415,25 @@ class ObsEndpointTests(unittest.TestCase):
         finally:
             obsctl.apply = original
 
+    def test_reading_obs_is_a_guarded_post(self):
+        # reading OBS borrows sources and can turn the camera on, so another website mustn't be able to trigger it
+        original, calls = obsctl.describe, []
+        try:
+            obsctl.describe = lambda webcams: calls.append(webcams) or {"scene": "Game", "webcam": {"on": False, "rect": None}}
+            self.assertEqual(self.request("GET", "/api/obs?webcams=1")[0], 404)
+            status, _ = self.request("POST", "/api/obs/describe", {"webcams": True},
+                                     {"Origin": "https://evil.example"})
+            self.assertEqual(status, 403)
+            status, _ = self.request("POST", "/api/obs/describe", {"webcams": True}, {"Content-Type": "text/plain"})
+            self.assertEqual(status, 403)
+            self.assertEqual(calls, [])
+            port = self.httpd.server_address[1]
+            status, data = self.request("POST", "/api/obs/describe", {"webcams": True},
+                                        {"Origin": f"http://127.0.0.1:{port}"})
+            self.assertEqual((status, data["ok"], calls), (200, True, [True]))
+        finally:
+            obsctl.describe = original
+
     @classmethod
     def setUpClass(cls):
         cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -359,12 +445,19 @@ class ObsEndpointTests(unittest.TestCase):
         cls.httpd.server_close()
 
     def post(self, body):
+        return self.request("POST", "/api/obs", body)
+
+    def request(self, method, path, body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
-        conn.request("POST", "/api/obs", body=json.dumps(body), headers={"Content-Type": "application/json"})
+        conn.request(method, path, body=None if body is None else json.dumps(body),
+                     headers={"Content-Type": "application/json", **(headers or {})})
         r = conn.getresponse()
-        data = json.loads(r.read() or b"{}")
+        raw = r.read()
         conn.close()
-        return r.status, data
+        try:
+            return r.status, json.loads(raw or b"{}")
+        except ValueError:
+            return r.status, {}
 
 
 if __name__ == "__main__":
