@@ -933,7 +933,7 @@ function drawNews(opts) {
     <ul>${(r.highlights || []).map(h => `<li><span aria-hidden="true">${esc(h.icon)}</span><span><b>${esc(h.headline)}${/[.!?]$/.test(h.headline) ? "" : "."}</b> ${esc(h.text)}</span></li>`).join("")}</ul></details></li>`).join("");
   const custom = d.feedback_to === "custom", blanks = /\{(title|what|why|name|version)\}/.test(d.feedback_url || "");
   $("requestWhere").textContent = !custom
-    ? "This opens GitHub with your idea filled in. Press the green button there to send it (you'll need a free GitHub account). It lands straight in the developer's inbox."
+    ? "This opens GitHub with your idea filled in. Press the green button there to submit it (you'll need a free GitHub account), and it shows up as a feature request on ClipLab's GitHub page."
     : blanks ? "This opens the feedback form with your idea filled in. Send it from there." : "This opens the feedback form and copies your idea, so you can paste it in.";
   $("requestSend").textContent = custom ? "Open the feedback form" : "Open GitHub to send it";
 }
