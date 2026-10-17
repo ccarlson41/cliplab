@@ -375,8 +375,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(build_state())
         if route == "/api/setup":
             return self.send_json(setup_state())
-        if route == "/api/obs":
-            return self.send_json(obs_state("webcams" in parse_qs(url.query)))
         if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.TONES:
             body = sounds.wav_bytes(route[7:-4])
             self.send_response(200)
@@ -445,12 +443,15 @@ class Handler(BaseHTTPRequestHandler):
             write_json(CONFIG, cfg)
             return self.send_json({"ok": True})
 
+        if route == "/api/obs/describe":   # a POST, not a GET: reading OBS borrows sources and can turn on the camera
+            return self.send_json(obs_state(body.get("webcams") is True))
+
         if route == "/api/obs":
             changes, error = obs_changes(body)
             if error:
                 return self.send_json({"error": error}, 400)
             try:
-                rect = obsctl.apply(changes)
+                rect, note = obsctl.apply(changes)
             except obsws.ObsError as e:
                 return self.send_json({"error": str(e)}, 400)
             except Exception as e:  # an OBS version that answers differently
@@ -462,7 +463,7 @@ class Handler(BaseHTTPRequestHandler):
                 styles = [st for st in cfg["styles"] if st != "cam"]
                 cfg["styles"] = (styles + ["cam"]) if cfg["webcam"]["rect"] else (styles or ["crop"])
                 write_json(CONFIG, cfg)
-            return self.send_json({"ok": True})
+            return self.send_json({"ok": True, "note": note})
 
         if route == "/api/setup/done":
             cfg = load_config()

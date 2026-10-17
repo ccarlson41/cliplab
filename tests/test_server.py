@@ -10,7 +10,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 
-os.environ.setdefault("CLIPLAB_HOME", tempfile.mkdtemp(prefix="cliplab-test-"))
+os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import server  # noqa: E402
 
