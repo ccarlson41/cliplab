@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 HOME = Path(os.environ.get("CLIPLAB_HOME") or Path.home() / "ClipLab").resolve()
 CONFIG = HOME / "config.json"
@@ -45,6 +46,7 @@ DEFAULTS = {
     "port": 8765,
     "allow_lan": False,                    # True lets phones/other PCs on your home network open the app
     "setup_done": False,                   # the app's Getting started guide was finished (or dismissed)
+    "feedback_url": "",                    # where Request a feature sends people; empty = a GitHub issue (see server.py)
     "peer": {                              # optional second machine (two-machine mode via Syncthing)
         "name": "",                        # e.g. "Gaming PC"; empty = one-machine mode
         "syncthing_home": "",              # this machine's Syncthing config folder (holds config.xml)
@@ -115,7 +117,19 @@ def load_config():
         if cfg[key] not in options:
             cfg[key] = DEFAULTS[key]
     cfg["webcam"]["rect"] = webcam_rect(cfg["webcam"]["rect"])
+    cfg["feedback_url"] = web_address(cfg["feedback_url"])
     return cfg
+
+
+def web_address(value):
+    """value if it's a plain http(s) address (it may hold {what}-style blanks), else "" for the default."""
+    url = value.strip() if isinstance(value, str) else ""
+    try:
+        parts = urlparse(url)
+        ok = parts.scheme in ("http", "https") and bool(parts.hostname)
+    except ValueError:   # e.g. a broken [IPv6] address
+        ok = False
+    return url if ok and len(url) <= 2000 and all(c.isprintable() and not c.isspace() for c in url) else ""
 
 
 def webcam_rect(rect):

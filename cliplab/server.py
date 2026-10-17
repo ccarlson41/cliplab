@@ -21,12 +21,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import obs, obsctl, obsws, sounds
-from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, REQUESTS, STATE, STATUS, THUMBS,
-                       TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json, tool,
-                       watch_dir, webcam_rect, write_json)
+from . import __version__, obs, obsctl, obsws, sounds
+from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, PACKAGE, REQUESTS, STATE, STATUS,
+                       THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
+                       tool, watch_dir, webcam_rect, write_json)
 
 MULTI = ("DOUBLE", "TRIPLE", "QUADRA", "PENTA")
+CHANGELOG = PACKAGE / "changelog.json"   # the What's new pop-up and patch history, newest release first
+STATIC = {"manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
+          "apple-touch-icon.png"}
+# Request a feature opens a new GitHub issue on the feature_request form, filled in from the app ({...} blanks);
+# feedback_url in config.json swaps in another form
+FEEDBACK_GITHUB = ("https://github.com/ccarlson41/cliplab/issues/new?template=feature_request.yml"
+                   "&labels=feature-request&title={title}&what={what}&why={why}&name={name}&version={version}")
 thumb_lock = threading.Lock()
 sync_cache = {"at": 0.0, "data": None}
 
@@ -98,6 +105,13 @@ def setup_state():
     watch = watch_dir(cfg)
     return {"watch_dir": str(watch), "obs": obs.check(watch), "obs_running": obs.obs_running(),
             "latest": latest_clip(watch), "now": time.time(), "game": cfg["game"]}
+
+
+def whats_new():
+    """This version, every release for the What's new pop-up and patch history, and where feature requests go."""
+    custom = load_config()["feedback_url"]
+    return {"version": __version__, "releases": read_json(CHANGELOG, []),
+            "feedback_url": custom or FEEDBACK_GITHUB, "feedback_to": "custom" if custom else "github"}
 
 
 def obs_state(find_webcams):
@@ -223,13 +237,13 @@ def build_state():
         if done_dir.exists() else []
     clips = sorted(items.values(), key=lambda i: i.get("time") or "9999", reverse=True)
     editable = {k: v for k, v in cfg.items() if k not in ("peer", "watch_dir", "output_dir", "ffmpeg", "port",
-                                                          "allow_lan", "setup_done")}
+                                                          "allow_lan", "setup_done", "feedback_url")}
     # new installs get the Getting started guide; two-PC setups record on the other PC, and anyone with shorts is set up
     setup_needed = not cfg["setup_done"] and not peer.get("name") and not processed
     return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
             "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
             "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
-            "queue": len(pending),
+            "queue": len(pending), "version": __version__,
             "now": datetime.now().isoformat(timespec="seconds")}
 
 
@@ -369,12 +383,14 @@ class Handler(BaseHTTPRequestHandler):
         route = url.path
         if route in ("/", "/index.html"):
             return self.send_file(WEB / "index.html")
-        if route in ("/manifest.webmanifest", "/icon.svg"):
+        if route.lstrip("/") in STATIC:
             return self.send_file(WEB / route.lstrip("/"), cache=True)
         if route == "/api/state":
             return self.send_json(build_state())
         if route == "/api/setup":
             return self.send_json(setup_state())
+        if route == "/api/changelog":
+            return self.send_json(whats_new())
         if route == "/api/obs":
             return self.send_json(obs_state("webcams" in parse_qs(url.query)))
         if route.startswith("/sound/") and route.endswith(".wav") and route[7:-4] in sounds.TONES:
