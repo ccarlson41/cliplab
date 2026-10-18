@@ -37,6 +37,7 @@ SUBTITLES = ("off", "on", "accurate")             # accurate = the bigger speech
 SUBTITLE_STYLES = ("bold", "pop", "boxed", "clean")
 SUBTITLE_POSITIONS = ("lower", "center", "upper")
 INTROS = ("off", "whoosh", "punch")               # whoosh = sound + zoom punch; punch = zoom only
+AUTO_UPDATES = ("auto", "notify", "off")          # install new releases / only say one is out / don't check
 GAMES = {                             # games ClipLab knows: display name (as in tag files) and caption hashtags
     "league": {"name": "League of Legends", "hashtags": "#leagueoflegends #lol"},
     "r6": {"name": "Rainbow Six Siege", "hashtags": "#rainbowsixsiege #r6siege #r6"},
@@ -81,6 +82,7 @@ DEFAULTS = {
     "subtitle_style": "bold",
     "subtitle_position": "lower",
     "intro": "off",                        # an attention hook in the first moment of each short
+    "auto_update": "auto",                 # new releases from GitHub; see updater.py
     "webcam": {                            # set by the app's OBS settings, which place the webcam in OBS
         "rect": None,                      # [x, y, w, h] as fractions of OBS's canvas; None = no webcam
         "corner": "bottom-left",
@@ -89,9 +91,10 @@ DEFAULTS = {
 }
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
                 "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound",
-                "subtitles", "subtitle_style", "subtitle_position", "intro")
+                "subtitles", "subtitle_style", "subtitle_position", "intro", "auto_update")
 CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS, "subtitles": SUBTITLES,
-           "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS}
+           "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS,
+           "auto_update": AUTO_UPDATES}
 LIMITS = {
     "lead_in": (0, 15), "tail": (0, 15), "min_seconds": (3, 60), "max_seconds": (10, 180),
     "blur_zoom": (0.4, 1.0), "crf": (16, 30), "maxrate_mbps": (2, 20), "tag_wait": (0, 120),
