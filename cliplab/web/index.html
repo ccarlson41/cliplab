@@ -1128,7 +1128,8 @@ function drawUpdates() {
     u.mode === "off" ? "ClipLab won't check by itself." : "",
     u.kind === "git" ? (u.blocked ? `This copy is a git checkout (${u.blocked}), so it isn't updated by itself.` : "This copy is a git checkout of main: updates come with git pull --ff-only.") : "",
   ].filter(Boolean).join(" "));
-  $("updRow").hidden = !(banner && banner[2]);
+  const busy = u.progress && ["downloading", "waiting", "installing", "restarting"].includes(u.progress.state);
+  $("updRow").hidden = !(u.available && u.launcher && !u.blocked && !busy && !u.requested);   // here, a skipped version can be retried
   setText($("updApply"), `Update to ${u.latest} now`);
 }
 async function updateNow() {

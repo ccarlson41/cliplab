@@ -415,7 +415,8 @@ def restart_or_undo(version, relaunch, undo):
         for leftover in UPDATES.glob("cliplab-*.zip"):
             leftover.unlink(missing_ok=True)
         return "exit"
-    log(f"ClipLab {version} didn't answer within {HEALTHY_WITHIN} s: rolling back to {__version__}")
+    log(f"ClipLab {version} didn't start (its app didn't answer within {HEALTHY_WITHIN} s, or its launcher quit): "
+        f"rolling back to {__version__}")
     if child:
         kill_tree(child.pid)
         try:
@@ -517,7 +518,7 @@ def _tick(state, stop_services, relaunch):
         progress("waiting", version)
         return None
     if time.time() - state.setdefault("idle_since", time.time()) < 8:   # quiet for two passes in a row
-        progress("waiting", version)
+        progress("installing", version)
         return None
     REQUEST.unlink(missing_ok=True)
     state["tried"] = version
