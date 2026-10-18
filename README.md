@@ -32,9 +32,9 @@ Open **PowerShell** (Start menu, type *PowerShell*, press Enter), paste this lin
 irm https://raw.githubusercontent.com/ccarlson41/cliplab/main/install.ps1 | iex
 ```
 
-It asks which game you play, where OBS should save replays, and whether your phone should be able to open the app. Then it downloads ClipLab (no git needed), installs Python and ffmpeg, starts ClipLab, sets it to start when you sign in, and opens the app. A **Getting started** guide there walks you through OBS's settings and checks each one, then has you save a test replay. Reopen the guide any time from Settings (⚙).
+It asks which game you play, where OBS should save replays, and whether your phone should be able to open the app. Then it downloads the latest ClipLab release (no git needed; the download is checked against its SHA-256), installs Python and ffmpeg, starts ClipLab, sets it to start when you sign in, and opens the app. A **Getting started** guide there walks you through OBS's settings and checks each one, then has you save a test replay. Reopen the guide any time from Settings (⚙).
 
-Run the same line again later to update ClipLab; your settings and shorts are kept. To see what it runs first, read [install.ps1](install.ps1).
+ClipLab then keeps itself up to date (see [Updates](#updates)). Running the same line again also updates it, along with Python and ffmpeg; your settings and shorts are kept. To see what it runs first, read [install.ps1](install.ps1).
 
 ## Manual install (one PC)
 1. **Get the code:**
@@ -82,6 +82,16 @@ These work with the OBS on the same PC as ClipLab. In two-PC mode they need Clip
 - **Request a feature:** the ✨ pop-up (or Settings > More) has a short form. It opens a GitHub issue with your idea filled in; press the green button there to send it (needs a free GitHub account).
 - **Install app:** Settings > More > **Install app** (or the button at the top on phones) gives ClipLab its own icon. On this PC, Edge and Chrome install it as an app. On an iPhone, use Safari's Share > Add to Home Screen. Phones reach ClipLab over home Wi-Fi without https, so Android adds a home-screen shortcut that opens in Chrome rather than a full app.
 
+## Updates
+ClipLab checks GitHub for a new release when it starts and every 6 hours. Settings (⚙) > **More** > **Updates** picks what happens:
+- **Install them by themselves** (the default): ClipLab downloads the new version, checks it against its SHA-256, waits until nothing is rendering, then swaps in the new code and restarts. The app reloads and shows what's new.
+- **Tell me first:** a banner says a new version is out; **Update now** installs it.
+- **Don't check:** nothing happens unless you press **Check now**.
+
+Only ClipLab's code is replaced. Your settings, shorts, clips, logs and downloaded models stay as they are, and the old code is kept in `backups\<version>`. If the new version doesn't start within a minute, ClipLab puts the old one back, keeps running it, and doesn't try that version again by itself (details in `logs\update.log`). Python and ffmpeg aren't updated this way; run the install line for those.
+
+A copy that came from `git clone` is only updated with `git pull --ff-only`, and only when it's on `main` with no changes or commits of its own. Otherwise the app just says an update is out.
+
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
 
@@ -93,7 +103,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | **Re-cut** | Drag the start/end handles or slide the whole window on the raw clip's timeline (tap it to move the nearer end); the player shows the frame you're cutting at. Fine-tune with the ±½ / ±1 s buttons, or a focused handle's arrow keys (Shift = 1 s). Preview the cut, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |
-| **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app. |
+| **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app, Updates. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -115,6 +125,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `subtitles` | `off` | `off`, `on` or `accurate` (bigger speech model) |
 | `subtitle_style`, `subtitle_position` | `bold`, `lower` | `bold`, `pop`, `boxed` or `clean`; `lower`, `center` or `upper` |
 | `intro` | `off` | `off`, `whoosh` (sound + zoom punch) or `punch` (zoom only) |
+| `auto_update` | `auto` | `auto` installs new releases by itself, `notify` only says one is out, `off` doesn't check (see [Updates](#updates)) |
 | `save_sound` | `off` | `off`, `chime`, `blip` or `pop`, played when OBS on this PC saves a replay |
 | `webcam` | *(none)* | Where the app placed your webcam in OBS (`rect` as fractions of the canvas, `corner`, `size`); used by the `cam` version |
 | `styles`, `lead_in`, `tail`, `min_seconds`, `max_seconds`, `blur_zoom`, `watermark`, `crf`, `maxrate_mbps`, `tag_wait`, `recycle_tossed_after_days` | | Render settings (also in the app) |
@@ -134,9 +145,23 @@ python -m cliplab config   show paths and settings
 - Code: `cliplab/settings.py` (paths, defaults), `engine.py` (rendering, jobs), `server.py` (API), `web/index.html` (the whole UI), `launcher.py`.
 - Tests: `python -m unittest -v` from the repo root (uses a throwaway home folder; the render test needs ffmpeg).
 - The app hands work to the engine by dropping JSON jobs in `requests\`; results land in `requests\done\`.
-- **Every change people can see gets a What's new entry:** bump `__version__` in `cliplab/__init__.py` and add the release to the top of `cliplab/changelog.json` (a fun title and 2–5 highlights, each an emoji, a short headline and one plain sentence). The app shows it once on each device after the update; the tests fail if the newest entry doesn't match `__version__`.
+- **Branches:** `dev` is where reviewed work lands; `main` is what people get, and only moves when Cam releases.
+- **Every change people can see gets a What's new entry** in `cliplab/changelog.json` (each highlight is an emoji, a short headline and one plain sentence). Which entry:
+  - If dev's `__version__` (in `cliplab/__init__.py`) **hasn't been released yet** (`git fetch --tags`, then `git tag -l v<version>` prints nothing), add your highlights to the newest entry.
+  - If it **has** (that tag exists), bump the minor version (`0.10.0` → `0.11.0`), and add a new entry at the top with a fun title, today's date and your highlights.
+
+  The app shows the newest entry once on each device after an update. The tests fail if the newest entry doesn't match `__version__`, or has more than 8 highlights.
+- **Releasing (Cam):** on GitHub, **Actions > Release > Run workflow** (or ask Claude to run `gh workflow run release.yml`). It releases what's on dev:
+  1. It checks that the tests passed on dev's newest commit, and that its version isn't released yet.
+  2. It moves `main` up to dev.
+  3. It tags `v<version>` and publishes a GitHub Release with the What's new notes and `cliplab-<version>.zip` (plus its `.sha256`). Installs and updates download that zip.
+
+  If something's off, it stops and says why on the run's page. `python scripts/release.py check` shows the same checks without changing anything. Nothing is ever released automatically.
+
+  GitHub doesn't let a workflow push changes to `.github/workflows`. A release that includes such a change (the first one does, since it adds `release.yml`) stops and asks you to move main yourself once: `git fetch origin`, then `git push origin origin/dev:main`. Then run Release again. GitHub also only shows the Run workflow button once `release.yml` is on `main`, so that first push comes before the first run.
 - App icons: after changing `cliplab/web/icon.svg`, run `python scripts/make_icons.py` to redraw the PNGs (needs Edge or Chrome).
-- Logs: `logs\engine.log`, `logs\launcher.log`.
+- Logs: `logs\engine.log`, `logs\launcher.log`, `logs\update.log`.
+- Testing updates: `CLIPLAB_UPDATE_URL` points ClipLab at another "latest release" address (a local copy of GitHub's JSON) instead of GitHub's.
 
 ## Disclaimer
 ClipLab isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc. ClipLab isn't affiliated with or endorsed by Ubisoft; Rainbow Six Siege is a trademark of Ubisoft Entertainment.

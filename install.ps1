@@ -3,8 +3,9 @@
 #
 #   irm https://raw.githubusercontent.com/ccarlson41/cliplab/main/install.ps1 | iex
 #
-# No git needed. Run it again any time to update; your settings and shorts are kept.
-# Testing a branch: set $env:CLIPLAB_BRANCH (and $env:CLIPLAB_REPO for a fork) first.
+# No git needed. It installs the latest release (checked against its SHA-256), or the main branch if there's no
+# release yet. Run it again any time to update; your settings and shorts are kept (ClipLab also updates itself).
+# Testing a branch: set $env:CLIPLAB_BRANCH (and $env:CLIPLAB_REPO for a fork) first; that skips releases.
 
 & {
   $ErrorActionPreference = 'Stop'
@@ -63,21 +64,46 @@
   }
   Write-Host ''
 
-  # --- download ---
+  # --- download: the latest release, checked against its SHA-256 (or a branch when there's no release) ---
   if (Test-Path (Join-Path $dir '.git')) {
     Write-Host 'This copy of ClipLab came from git, so it is not re-downloaded. Update it with: git pull' -ForegroundColor Yellow
   } else {
-    Write-Host "Downloading ClipLab ($repo, $branch)..." -ForegroundColor Cyan
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('cliplab-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Force $tmp | Out-Null
     try {
       $zip = Join-Path $tmp 'cliplab.zip'
-      try { Invoke-WebRequest "https://github.com/$repo/archive/refs/heads/$branch.zip" -OutFile $zip -UseBasicParsing }
-      catch { return Fail "Couldn't download ClipLab: $($_.Exception.Message)" }
+      $release = $null; $asset = $null; $sums = $null
+      if (-not $env:CLIPLAB_BRANCH) {
+        try { $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'ClipLab-installer' } -UseBasicParsing }
+        catch { $release = $null }   # no release yet (or GitHub didn't answer): use the branch
+      }
+      if ($release) {
+        $version = "$($release.tag_name)" -replace '^v', ''
+        $asset = @($release.assets) | Where-Object { $_.name -eq "cliplab-$version.zip" } | Select-Object -First 1
+        $sums = @($release.assets) | Where-Object { $_.name -eq "cliplab-$version.zip.sha256" } | Select-Object -First 1
+      }
+      if ($asset -and $sums) {
+        Write-Host "Downloading ClipLab $version..." -ForegroundColor Cyan
+        $sumFile = Join-Path $tmp 'cliplab.zip.sha256'
+        try {
+          Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
+          Invoke-WebRequest $sums.browser_download_url -OutFile $sumFile -UseBasicParsing
+        } catch { return Fail "Couldn't download ClipLab: $($_.Exception.Message)" }
+        $want = ((Get-Content $sumFile -Raw).Trim() -split '\s+')[0].ToLower()
+        $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        if ($got -ne $want) { return Fail "The download didn't match its checksum, so nothing was installed. Try again in a few minutes." }
+      } else {
+        Write-Host "Downloading ClipLab ($repo, $branch)..." -ForegroundColor Cyan
+        try { Invoke-WebRequest "https://github.com/$repo/archive/refs/heads/$branch.zip" -OutFile $zip -UseBasicParsing }
+        catch { return Fail "Couldn't download ClipLab: $($_.Exception.Message)" }
+      }
       Expand-Archive $zip (Join-Path $tmp 'x') -Force
       $src = Get-ChildItem (Join-Path $tmp 'x') -Directory | Select-Object -First 1
       New-Item -ItemType Directory -Force $dir | Out-Null
       Copy-Item (Join-Path $src.FullName '*') $dir -Recurse -Force   # code only; your clips and settings live in other files
+      # the list of code files lets ClipLab's updater remove files a later version drops (see cliplab\updater.py)
+      $files = Get-ChildItem $src.FullName -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($src.FullName.Length + 1).Replace('\', '/') }
+      [IO.File]::WriteAllLines((Join-Path $dir '.cliplab-files'), [string[]]$files)
     } finally {
       Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
