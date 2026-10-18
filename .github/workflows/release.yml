@@ -1,0 +1,32 @@
+name: Release
+
+# Run by hand only: Actions > Release > Run workflow (or `gh workflow run release.yml`). Nothing releases by itself.
+# It releases what's on dev, after checking its tests passed: main fast-forwards to dev, and tag v<__version__> gets a
+# GitHub Release with the What's new notes and the code zip that installs and updates download.
+# The steps and the reasons it stops are in scripts/release.py.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # move main, create the tag and the release
+  actions: read     # see whether the tests passed on dev
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Release dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release.py publish

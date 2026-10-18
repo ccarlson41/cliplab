@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, layouts, obs, obsctl, obsws, sounds, subtitles
+from . import __version__, layouts, obs, obsctl, obsws, sounds, subtitles, updater
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, PACKAGE, REQUESTS, STATE, STATUS,
                        THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, cam_layout, check_cam_layout, clean_config,
                        load_config, output_dir, read_json, tool, watch_dir, webcam_rect, write_json)
@@ -249,7 +249,7 @@ def build_state():
             "speech_to_text": subtitles.ffmpeg_has_whisper(cfg),   # checked once, then cached
             # the webcam layout previews, drawn for your webcam's shape (a 16:9 one before you've placed it)
             "cam_preview": layouts.preview(cfg["webcam"]["rect"] or [0, 0, 0.25, 0.25]),
-            "queue": len(pending), "version": __version__,
+            "queue": len(pending), "version": __version__, "update": updater.summary(cfg),
             "now": datetime.now().isoformat(timespec="seconds")}
 
 
@@ -515,6 +515,16 @@ class Handler(BaseHTTPRequestHandler):
                 cfg["styles"] = (styles + ["cam"]) if cfg["webcam"]["rect"] else (styles or ["crop"])
                 write_json(CONFIG, cfg)
             return self.send_json({"ok": True, "note": note})
+
+        if route == "/api/update/check":   # Check now (a POST: it reaches out to GitHub)
+            updater.check_now()
+            return self.send_json({"ok": True, "update": updater.summary(load_config())})
+
+        if route == "/api/update/apply":   # Update now: the launcher installs it and restarts ClipLab
+            error = updater.request(body.get("version"))
+            if error:
+                return self.send_json({"error": error}, 400)
+            return self.send_json({"ok": True, "update": updater.summary(load_config())})
 
         if route == "/api/setup/done":
             cfg = load_config()

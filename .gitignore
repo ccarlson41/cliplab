@@ -25,3 +25,11 @@ clipper/tmp/
 clipper/*.log
 clipper/*.log.old
 *password*.txt
+
+# updates (see cliplab/updater.py), models and sounds ClipLab downloads or makes, release builds
+backups/
+updates/
+models/
+sounds/
+dist/
+.cliplab-files
