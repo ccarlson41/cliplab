@@ -6,7 +6,7 @@ Save a replay in OBS (or let the auto-clipper catch your multikills), and about 
 
 - **Two looks per clip:** *Blur fill* (the whole fight, over a blurred backdrop) and *Center crop* (fills the phone screen).
 - **Smart trims:** with a tag file from the auto-clipper, each short runs from just before the first kill to just after the last.
-- **Re-cut any short** from its raw clip in the app, nudging start and end by half a second.
+- **Re-cut any short** from its raw clip in the app: drag its start and end on a timeline while the player shows the frame you're cutting at.
 - **Highlight reels** of a whole game, or of everything you've kept.
 - **Your watermark,** loudness levelled for social apps, captions with hashtags.
 - **One PC or two:** run it all on your gaming PC, or hand the rendering to an old laptop over your home network.
@@ -90,7 +90,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 |---|---|
 | **Browse** | Shorts are grouped by game. Filter by play (DOUBLE KILL, ACE…) or by New / Kept. Hover to preview. |
 | **Player** | Switch versions, Ready to post, Download, Copy caption, Keep, Toss. Keys: ← → browse · P ready to post · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
-| **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
+| **Re-cut** | Drag the start/end handles or slide the whole window on the raw clip's timeline (tap it to move the nearer end); the player shows the frame you're cutting at. Fine-tune with the ±½ / ±1 s buttons, or a focused handle's arrow keys (Shift = 1 s). Preview the cut, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |
 | **Settings (⚙)** | **Shorts:** game, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app. |

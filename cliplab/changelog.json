@@ -7,7 +7,8 @@
    {"icon": "🎉", "headline": "This pop-up!", "text": "Whenever ClipLab updates, you get a quick tour of what's new, confetti included."},
    {"icon": "📜", "headline": "Patch history", "text": "Tap ✨ at the top of the app to look back at every update ClipLab has had."},
    {"icon": "💡", "headline": "Request a feature", "text": "Got an idea? Write it up in the app and ClipLab opens a GitHub feature request with it filled in. Submit it there with a free GitHub account.", "action": "request"},
-   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"}
+   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"},
+   {"icon": "✂️", "headline": "Drag to trim", "text": "Grab the start or end of the re-cut timeline, or slide the whole window, and the player shows the exact frame you're cutting at. Works with a finger on your phone too."}
   ]
  },
  {
