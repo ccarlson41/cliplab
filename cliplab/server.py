@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, obs, obsctl, obsws, sounds, subtitles
+from . import __version__, obs, obsctl, obsws, sounds, subtitles, updater
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOLD, HOME, NO_WINDOW, PACKAGE, RENDER_NOW, REQUESTS,
                        STATE, STATUS, THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
                        tool, watch_dir, webcam_rect, write_json)
@@ -253,7 +253,7 @@ def build_state():
             "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
             "hold": game_hold(health),
             "speech_to_text": subtitles.ffmpeg_has_whisper(cfg),   # checked once, then cached
-            "queue": len(pending), "version": __version__,
+            "queue": len(pending), "version": __version__, "update": updater.summary(cfg),
             "now": datetime.now().isoformat(timespec="seconds")}
 
 
@@ -510,6 +510,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "Nothing is waiting for a game right now."}, 400)
             RENDER_NOW.write_text(str(time.time()), encoding="utf-8")
             return self.send_json({"ok": True})
+
+        if route == "/api/update/check":   # Check now (a POST: it reaches out to GitHub)
+            updater.check_now()
+            return self.send_json({"ok": True, "update": updater.summary(load_config())})
+
+        if route == "/api/update/apply":   # Update now: the launcher installs it and restarts ClipLab
+            error = updater.request(body.get("version"))
+            if error:
+                return self.send_json({"error": error}, 400)
+            return self.send_json({"ok": True, "update": updater.summary(load_config())})
 
         if route == "/api/setup/done":
             cfg = load_config()
