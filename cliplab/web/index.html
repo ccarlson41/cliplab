@@ -164,6 +164,12 @@ dialog#install { width: min(560px, calc(100vw - 24px)); }
 .install-steps p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 .install-steps .tag { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--sun); margin-left: 6px; }
 .about { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+/* Updates: a line in Settings > More, and a banner under the header while one is out or being installed */
+.upd-banner { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; padding: 9px 10px 9px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--sun) 55%, var(--line)); background: color-mix(in srgb, var(--sun) 12%, var(--panel)); }
+.upd-banner.bad { border-color: color-mix(in srgb, var(--bad) 60%, var(--line)); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.upd-banner .msg { flex: 1 1 260px; min-width: 0; display: flex; gap: 9px; align-items: center; }
+.upd-banner .icon-btn { width: 28px; height: 28px; border: 0; color: var(--muted); }
 @media (max-width: 480px) {
   .news-hero h3 { font-size: 24px; } .news-burst { font-size: 34px; }
   .news-panel, .news-hero { padding-left: 16px; padding-right: 16px; }
@@ -283,6 +289,13 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
       <button class="icon-btn" id="openSettings" type="button" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
+
+  <div class="upd-banner" id="updBanner" role="status" hidden>
+    <span class="msg"><span class="dot" id="updDot"></span><span id="updMsg"></span></span>
+    <a class="btn small" id="updPage" href="#" target="_blank" rel="noopener">What's in it?</a>
+    <button class="btn small primary" type="button" id="updNow">Update now</button>
+    <button class="icon-btn" type="button" id="updHide" aria-label="Hide this message">×</button>
+  </div>
 
   <section class="stats" id="stats" aria-label="Stats"></section>
 
@@ -456,6 +469,14 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
           <button class="btn" type="button" id="moreNews">✨ What's new &amp; patch history</button>
           <button class="btn" type="button" id="moreRequest">💡 Request a feature</button>
           <button class="btn" type="button" id="moreInstall">📲 Install app</button>
+        </div>
+        <div class="field">
+          <label for="s_auto_update">Updates</label>
+          <div class="row"><select id="s_auto_update">
+            <option value="auto">Install them by themselves</option><option value="notify">Tell me first</option><option value="off">Don't check</option></select>
+            <button class="btn small" type="button" id="updCheck">Check now</button></div>
+          <span class="hint" id="updInfo"></span>
+          <div class="actions" id="updRow" hidden><button class="btn small primary" type="button" id="updApply"></button></div>
         </div>
       </div>
     </div>
@@ -666,6 +687,7 @@ function render() {
   if (open) fillSheet(false);
   if (s.setup_needed && !guide.shown && !document.querySelector("dialog[open]")) openGuide();
   checkNews();
+  drawUpdates();
 }
 
 /* ---------- player sheet ---------- */
@@ -1065,6 +1087,76 @@ $("installOk").addEventListener("click", () => $("install").close());
 $("moreNews").addEventListener("click", () => { $("settings").close(); openNews("latest"); });
 $("moreRequest").addEventListener("click", () => { $("settings").close(); openNews("request"); });
 $("moreInstall").addEventListener("click", installApp);
+
+/* ---------- updates ---------- */
+// The launcher checks GitHub for new releases and installs them (updater.py). This shows where that's at: a line in
+// Settings > More and a banner, with Check now and Update now. After an update the page reloads (see checkNews) and
+// the What's new pop-up shows.
+const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };   // no repeat announcements
+function updateBanner(u) {   // [message, tone ("busy", "bad" or ""), show Update now]
+  const p = u.progress, v = p ? p.version : u.latest;
+  if (p && p.state === "downloading") return [`Downloading ClipLab ${v}…`, "busy", false];
+  if (p && p.state === "waiting") return [`ClipLab ${v} installs as soon as nothing is rendering.`, "busy", false];
+  if (p && (p.state === "installing" || p.state === "restarting")) return [`Updating ClipLab to ${v}. It restarts in a moment.`, "busy", false];
+  if (p) return [p.message, "bad", p.state === "failed" && u.available && u.launcher];
+  if (!u.available) return null;
+  if (u.blocked) return [`ClipLab ${v} is out. This copy is a git checkout (${u.blocked}), so update it with git pull.`, "", false];
+  if (!u.launcher) return [`ClipLab ${v} is out. Run the install line again to get it.`, "", false];
+  if (u.requested) return [`Updating ClipLab to ${v} in a moment…`, "busy", false];
+  return [`ClipLab ${v} is out.${u.mode === "auto" && !u.skipped ? " It installs itself once nothing is rendering." : ""}`, "", true];
+}
+function drawUpdates() {
+  const u = state.update; if (!u) return;
+  const banner = updateBanner(u), key = `${u.latest}:${u.progress ? u.progress.state : "out"}`;
+  let hidden = !banner;
+  try { hidden = hidden || localStorage.getItem("cl-upd-hide") === key; } catch (e) {}
+  $("updBanner").hidden = hidden;
+  if (banner) {
+    setText($("updMsg"), banner[0]);
+    $("updBanner").classList.toggle("bad", banner[1] === "bad");
+    $("updDot").className = "dot" + (banner[1] === "busy" ? " busy" : banner[1] === "bad" ? " bad" : " warn");
+    $("updNow").hidden = !banner[2];
+    $("updPage").hidden = !u.page || banner[1] === "busy";
+    if (u.page) $("updPage").href = u.page;
+  }
+  if (document.activeElement !== $("s_auto_update")) $("s_auto_update").value = u.mode;
+  const when = u.checked ? `checked ${ago(u.checked)}` : "not checked yet";
+  setText($("updInfo"), [
+    u.available ? `ClipLab ${u.latest} is out (${when}).` : u.error ? `${u.error} (${when})` : `Up to date (${when}).`,
+    banner && banner[1] && u.progress ? banner[0] : "",
+    u.mode === "off" ? "ClipLab won't check by itself." : "",
+    u.kind === "git" ? (u.blocked ? `This copy is a git checkout (${u.blocked}), so it isn't updated by itself.` : "This copy is a git checkout of main: updates come with git pull --ff-only.") : "",
+  ].filter(Boolean).join(" "));
+  $("updRow").hidden = !(banner && banner[2]);
+  setText($("updApply"), `Update to ${u.latest} now`);
+}
+async function updateNow() {
+  const r = await post("/api/update/apply", { version: state.update.latest });
+  if (!r) return;
+  state.update = r.update; drawUpdates();
+  toast(`Updating to ${state.update.latest}. ClipLab restarts in a moment.`);
+}
+$("updNow").addEventListener("click", updateNow);
+$("updApply").addEventListener("click", updateNow);
+$("updHide").addEventListener("click", () => {
+  const u = state.update; $("updBanner").hidden = true;
+  try { localStorage.setItem("cl-upd-hide", `${u.latest}:${u.progress ? u.progress.state : "out"}`); } catch (e) {}
+});
+$("updCheck").addEventListener("click", async () => {
+  const b = $("updCheck"); b.disabled = true; b.textContent = "Checking…";
+  const r = await post("/api/update/check", {});
+  b.disabled = false; b.textContent = "Check now";
+  if (!r) return;
+  state.update = r.update; drawUpdates();
+  toast(r.update.available ? `ClipLab ${r.update.latest} is out` : r.update.error || "ClipLab is up to date", !!(r.update.error && !r.update.available));
+});
+$("s_auto_update").addEventListener("change", async e => {
+  const mode = e.target.value;
+  if (!(await post("/api/config", { auto_update: mode }))) { e.target.value = state.update.mode; return; }
+  state.config.auto_update = mode; state.update.mode = mode; drawUpdates();
+  toast({ auto: "Updates install by themselves", notify: "ClipLab will tell you when an update is out", off: "ClipLab won't check for updates" }[mode]);
+});
 
 /* ---------- data ---------- */
 async function refresh() {
