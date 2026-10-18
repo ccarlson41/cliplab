@@ -9,7 +9,8 @@ Each clip becomes 1080x1920 shorts in one ffmpeg pass (one decode, one file per
 enabled style) plus a caption file, in output_dir/<date>/:
   <name>_blur.mp4  the fight in the middle, blurred copy filling the frame
   <name>_crop.mp4  tight center crop that fills the phone screen
-  <name>_cam.mp4   your webcam on top, gameplay below (when the app has placed a webcam in OBS)
+  <name>_cam.mp4   your webcam with the play, in the layout you pick: a strip on top or at the bottom, half and
+                   half, or a box in a corner (when the app has placed a webcam in OBS; see layouts.py)
 Originals are never touched.
 
 If a tag file sits next to the clip (<clip>.json, see docs/tag-format.md), the
@@ -26,10 +27,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import obsctl, obsws, sounds, subtitles
+from . import layouts, obsctl, obsws, sounds, subtitles
+from .layouts import cam_height  # noqa: F401  (the top strip's height; tests and older callers use it from here)
 from .settings import (FAILED, GAMES, HEARTBEAT, HOME, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
-                       check_folders, load_config, output_dir, read_json, recycle, tag_path, tool, watch_dir,
-                       webcam_rect, write_json)
+                       cam_layout, check_folders, load_config, output_dir, read_json, recycle, tag_path, tool,
+                       watch_dir, webcam_rect, write_json)
 
 POLL_SECONDS = 5
 FONT = "C\\:/Windows/Fonts/arialbd.ttf"
@@ -111,23 +113,43 @@ def plan(duration, tags, cfg, override=None):
 
 # ---------- rendering ----------
 
-def cam_height(rect):
-    """Pixels of the 1080x1920 frame the webcam gets in Webcam on top: its own shape, within limits.
-    The rect is a fraction of OBS's canvas, taken to be 16:9."""
-    aspect = (rect[2] * 16) / (rect[3] * 9)
-    return int(round(min(840, max(480, 1080 / aspect)) / 2)) * 2
+def fill(w, h):
+    """Filters that cut the middle of the picture to w:h and scale it to w x h, whatever shape the input is."""
+    return f"crop='min(iw,ih*{w / h:.4f})':'min(ih,iw*{h / w:.4f})',scale={w}:{h}"
 
 
-def style_graph(style, src, out, cfg, webcam=None):
+def rounded(r):
+    """A geq expression: 255 inside a W x H rectangle with corners rounded by r pixels, 0 outside, smooth edges."""
+    return (f"'255*clip({r}+0.5-hypot(max(0,abs(X+0.5-W/2)-(W/2-{r})),max(0,abs(Y+0.5-H/2)-(H/2-{r}))),0,1)'")
+
+
+def cam_graph(src, out, webcam, cam):
+    """The Webcam version: the webcam (webcam = its rect in OBS's canvas) placed as layouts.frame says (cam)."""
+    x, y, w, h = webcam
+    cx, cy, cw, ch = cam["cam"]
+    face = (f"[{src}c]crop=iw*{w:.4f}:ih*{h:.4f}:iw*{x:.4f}:ih*{y:.4f},"
+            f"scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch}")
+    game = f"[{src}g]{fill(*cam['game'][2:])}[{src}game]"
+    if cam["layout"] != "corner":   # two strips, one above the other
+        order = f"[{src}game][{src}cam]" if cam["layout"] == "bottom" else f"[{src}cam][{src}game]"
+        return (f"[{src}]split=2[{src}c][{src}g];{face}[{src}cam];{game};"
+                f"{order}vstack,setsar=1,format=yuv420p[{out}]")
+    # a rounded box with a white edge over the play; both shapes are drawn once and reused for every frame
+    b, r = layouts.BORDER, layouts.RADIUS
+    return (f"[{src}]split=2[{src}c][{src}g];{game};"
+            f"{face},format=yuva420p[{src}face];"
+            f"color=c=black:s={cw}x{ch}:r=1:d=1,format=gray,geq=lum={rounded(r)}[{src}mask];"
+            f"[{src}face][{src}mask]alphamerge[{src}cam];"
+            f"color=c=white:s={cw + 2 * b}x{ch + 2 * b}:r=1:d=1,format=rgba,"
+            f"geq=r=255:g=255:b=255:a={rounded(r + b)}[{src}edge];"
+            f"[{src}game][{src}edge]overlay={cx - b}:{cy - b}[{src}under];"
+            f"[{src}under][{src}cam]overlay={cx}:{cy},setsar=1,format=yuv420p[{out}]")
+
+
+def style_graph(style, src, out, cfg, webcam=None, cam=None):
+    """cam = the Webcam version's layout (layouts.frame), for style "cam"."""
     if style == "cam":
-        x, y, w, h = webcam
-        top = cam_height(webcam)
-        ratio = 1080 / (1920 - top)
-        return (f"[{src}]split=2[{src}c][{src}g];"
-                f"[{src}c]crop=iw*{w:.4f}:ih*{h:.4f}:iw*{x:.4f}:ih*{y:.4f},"
-                f"scale=1080:{top}:force_original_aspect_ratio=increase,crop=1080:{top}[{src}cam];"
-                f"[{src}g]crop='min(iw,ih*{ratio:.4f})':ih,scale=1080:{1920 - top}[{src}game];"
-                f"[{src}cam][{src}game]vstack,setsar=1,format=yuv420p[{out}]")
+        return cam_graph(src, out, webcam, cam or layouts.frame(webcam))
     if style == "blur":
         z = cfg["blur_zoom"]
         return (f"[{src}]split=2[{src}a][{src}b];"
@@ -139,7 +161,7 @@ def style_graph(style, src, out, cfg, webcam=None):
     return f"[{src}]crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920,format=yuv420p[{out}]"
 
 
-def post_filters(overlays, cfg, label_y="h*0.13"):
+def post_filters(overlays, cfg, label_y="h*0.13", watermark_y="h*0.88"):
     parts = [
         f"drawtext=fontfile='{FONT}':text='{safe_text(label)}':fontsize=104:fontcolor=white:"
         f"borderw=7:bordercolor=black@0.85:x=(w-text_w)/2:y={label_y}:"
@@ -147,7 +169,7 @@ def post_filters(overlays, cfg, label_y="h*0.13"):
         for label, at in overlays]
     if cfg.get("watermark"):
         parts.append(f"drawtext=fontfile='{FONT}':text='{cfg['watermark']}':fontsize=42:fontcolor=white@0.75:"
-                     f"borderw=3:bordercolor=black@0.5:x=(w-text_w)/2:y=h*0.88")
+                     f"borderw=3:bordercolor=black@0.5:x=(w-text_w)/2:y={watermark_y}")
     return ",".join(parts)
 
 
@@ -167,26 +189,30 @@ ZOOM = (f"scale=w='1080*(1+{PUNCH[0]}*max(0,1-t/{PUNCH[1]}))':h=-2:eval=frame,cr
 
 
 def styles_for(cfg, webcam):
-    """The enabled styles this clip can have: Webcam on top needs to know where the webcam was."""
+    """The enabled styles this clip can have: the Webcam version needs to know where the webcam was."""
     styles = [s for s in cfg["styles"] if s != "cam" or webcam]
     return styles or ["crop"]
 
 
-def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=None, subs=None):
-    """One ffmpeg pass producing every enabled style. Returns the output file names.
+def render(src, out_dir, stem, start, length, has_audio, overlays, cfg, webcam=None, subs=None, layout=None,
+           styles=None):
+    """One ffmpeg pass producing every enabled style (or just these styles). Returns the output file names.
 
-    subs = {"normal": ..., "cam": ...}: subtitle files from subtitles.prepare, relative to HOME (ffmpeg runs there)."""
-    styles = styles_for(cfg, webcam)
+    subs = {"normal": ..., "cam": ...}: subtitle files from subtitles.prepare, relative to HOME (ffmpeg runs there).
+    layout = the Webcam version's layout (settings.cam_layout); None is the webcam on top."""
+    styles = styles or styles_for(cfg, webcam)
     n = len(styles)
     subs = subs or {}
+    cam = layouts.frame(webcam, layout) if webcam else None
     whoosh = cfg.get("intro") == "whoosh"
     graph = ["[0:v]" + (f"split={n}" + "".join(f"[v{i}]" for i in range(n)) if n > 1 else "null[v0]")]
     for i, style in enumerate(styles):
-        # in Webcam on top, play labels go just under the webcam instead of over your face
-        post = post_filters(overlays, cfg, f"{cam_height(webcam) + 50}" if style == "cam" else "h*0.13")
+        # in the Webcam version, play labels and the watermark go where the webcam isn't
+        post = post_filters(overlays, cfg, cam["label_y"], cam["watermark_y"]) if style == "cam" \
+            else post_filters(overlays, cfg)
         sub = subs.get("cam" if style == "cam" else "normal")
         chain = [ZOOM if cfg.get("intro") in ("whoosh", "punch") else "", f"subtitles=f={sub}" if sub else "", post]
-        graph.append(style_graph(style, f"v{i}", f"{style}raw", cfg, webcam))
+        graph.append(style_graph(style, f"v{i}", f"{style}raw", cfg, webcam, cam))
         graph.append(f"[{style}raw]{','.join(c for c in chain if c) or 'null'}[{style}v]")
     split = f"asplit={n}" + "".join(f"[a{i}]" for i in range(n)) if n > 1 else "anull[a0]"
     if has_audio and whoosh:
@@ -244,15 +270,16 @@ def current_webcam(cfg):
         return cfg["webcam"]["rect"]
 
 
-def make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note):
+def make_subtitles(clip, key, start, length, has_audio, cfg, cam, note):
     """(subtitle files, why there are none). Files are {} when subtitles are off, there's nothing to hear, or
-    anything goes wrong; the reason is shown on the short in the app ("" when subtitles are off)."""
+    anything goes wrong; the reason is shown on the short in the app ("" when subtitles are off).
+    cam = the Webcam version's layout (layouts.frame), or None when there's no Webcam version."""
     if cfg["subtitles"] == "off":
         return {}, ""
     if not has_audio:
         return {}, "No subtitles: this clip has no sound."
     try:
-        files = subtitles.prepare(clip, start, length, cfg, cam_height(webcam) if webcam else None, note)
+        files = subtitles.prepare(clip, start, length, cfg, cam["subs"] if cam else None, note)
         return files, "" if files else "No subtitles: nobody talks in this clip."
     except subtitles.SubtitleError as e:
         log(f"SUBS {key}: made without subtitles ({e})")
@@ -264,7 +291,11 @@ def make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note):
         return {}, f"Subtitles didn't work this time ({reason})."
 
 
-def process_clip(clip, key, state, cfg, override=None):
+def process_clip(clip, key, state, cfg, override=None, layout=None):
+    """Make a clip's shorts (again) and record them in state. Returns the clip's new state entry.
+
+    override = {"start", "end"} from a re-cut in the app. layout = a new webcam layout for this short from the app:
+    then only its Webcam version is made again, with the same cut."""
     t0 = time.time()
     previous = state.get(key, {})
     duration, has_audio = probe(clip, cfg)
@@ -272,39 +303,67 @@ def process_clip(clip, key, state, cfg, override=None):
     # a re-cut or re-render keeps the clip's game (shorts from before game support are all League)
     game = previous.get("game", "league") if previous.get("done") else game_of(tags, cfg)
     webcam = previous.get("webcam") if previous.get("done") else current_webcam(cfg)   # likewise where the webcam was
+    recut, styles = bool(override), None
+    if layout is not None:
+        if not (previous.get("done") and webcam):
+            raise ValueError("This short has no Webcam version to change.")
+        layout, styles = cam_layout(layout), ["cam"]
+        if previous.get("start") is not None and previous.get("end") is not None:
+            override = {"start": previous["start"], "end": previous["end"]}
+    else:   # and its webcam layout (shorts from before layouts have the webcam on top)
+        layout = cam_layout(previous.get("cam_layout")) if previous.get("done") else cfg["cam_layout"]
     start, length, overlays = plan(duration, tags, cfg, override)
     day = previous.get("dir") or datetime.now().strftime("%Y-%m-%d")
     out_dir = output_dir(cfg) / day
-    status = {"key": key, "styles": styles_for(cfg, webcam), "started": time.time(), "trim": bool(override)}
+    status = {"key": key, "styles": styles or styles_for(cfg, webcam), "started": time.time(), "trim": recut}
     write_json(STATUS, status)
 
     def note(text):   # shown in the app while this clip is being made
         write_json(STATUS, dict(status, note=text, started=time.time()))
 
-    subs, subs_note = make_subtitles(clip, key, start, length, has_audio, cfg, webcam, note)
-    if subs:
-        note("Rendering with subtitles")
+    def make(layout):
+        subs, subs_note = make_subtitles(clip, key, start, length, has_audio, cfg,
+                                         layouts.frame(webcam, layout) if webcam else None, note)
+        if subs:
+            note("Rendering with subtitles")
+        try:
+            names = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg, webcam, subs, layout,
+                           styles)
+        finally:
+            for f in subs.values():
+                (HOME / f).unlink(missing_ok=True)
+        return names, bool(subs), subs_note
+
     try:
-        outputs = render(clip, out_dir, clip.stem, start, length, has_audio, overlays, cfg, webcam, subs)
-    finally:
-        for f in subs.values():
-            (HOME / f).unlink(missing_ok=True)
+        outputs, subtitled, subs_note = make(layout)
+    except subprocess.CalledProcessError as e:
+        # a layout must never cost you a short: if one ever fails, make the short with the webcam on top instead
+        if not webcam or layout["layout"] == "top" or "cam" not in status["styles"]:
+            raise
+        reason = ((e.stderr or "").strip().splitlines() or ["ffmpeg failed"])[-1][:200]
+        log(f"LAYOUT {key}: the {layout['layout']} webcam layout didn't render ({reason}); putting the webcam on top")
+        layout = cam_layout(None)
+        outputs, subtitled, subs_note = make(layout)
+    if styles:   # only the Webcam version was made again; the others stay as they were
+        outputs = previous.get("outputs", []) + [o for o in outputs if o not in previous.get("outputs", [])]
     for stale in set(previous.get("outputs", [])) - set(outputs):   # a style was switched off since last time
         if (out_dir / stale).exists():
             (TOSSED / day).mkdir(parents=True, exist_ok=True)
             shutil.move(str(out_dir / stale), str(TOSSED / day / stale))
     (out_dir / f"{clip.stem}_caption.txt").write_text(caption_for(tags, clip.stem, game), encoding="utf-8")
-    state[key] = {
+    entry = state[key] = {
         "done": datetime.now().isoformat(timespec="seconds"), "outputs": outputs, "tagged": bool(tags), "game": game,
-        "webcam": webcam,
+        "webcam": webcam, "cam_layout": layout if webcam else None,
         "dir": day, "length": round(length, 1), "start": round(start, 2), "end": round(start + length, 2),
         "src_duration": round(duration, 2), "labels": [lbl for lbl, _ in overlays],
         "title": (tags or {}).get("title", ""), "champion": (tags or {}).get("champion", ""),
-        "trimmed": bool(override) or previous.get("trimmed", False), "subtitled": bool(subs),
+        "trimmed": recut or previous.get("trimmed", False), "subtitled": subtitled,
         "subtitles_note": subs_note,
     }
     what = " + ".join(lbl for lbl, _ in overlays) or "untagged"
-    log(f"OK   {key} ({what}, {length:.0f}s of {duration:.0f}s) -> {', '.join(outputs)} in {time.time() - t0:.0f}s")
+    made = ", ".join(outputs) if not styles else f"{', '.join(styles)} only, {layout['layout']} layout"
+    log(f"OK   {key} ({what}, {length:.0f}s of {duration:.0f}s) -> {made} in {time.time() - t0:.0f}s")
+    return entry
 
 
 def reel_game(entries):
@@ -367,6 +426,7 @@ def handle_requests(state):
             continue
         req.setdefault("id", uuid.uuid4().hex[:8])
         cfg = load_config()
+        ok = True
         try:
             if req.get("type") == "rerender":
                 key = req["key"]
@@ -376,11 +436,19 @@ def handle_requests(state):
                 override = {"start": req["start"], "end": req["end"]} if "start" in req and "end" in req else None
                 process_clip(clip, key, state, cfg, override)
                 message = "Re-cut done." if override else "Re-rendered with current settings."
+            elif req.get("type") == "layout":
+                key = req["key"]
+                clip = watch_dir(cfg) / key
+                if key not in state or not clip.exists():
+                    raise ValueError("The raw clip is gone, so this short's webcam layout can't change.")
+                wanted = cam_layout(req.get("cam_layout"))
+                ok = process_clip(clip, key, state, cfg, layout=wanted)["cam_layout"] == wanted
+                message = ("Webcam layout changed." if ok else
+                           "That layout didn't work for this clip, so its webcam went on top instead.")
             elif req.get("type") == "reel":
                 message = make_reel(req, state, cfg)
             else:
                 raise ValueError(f"Unknown job type: {req.get('type')}")
-            ok = True
         except Exception as e:  # report to the app; keep the engine alive
             ok, message = False, (getattr(e, "stderr", "") or str(e)).strip()[:300]
             log(f"JOB  {req.get('type')} failed: {message}")

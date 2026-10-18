@@ -3,7 +3,7 @@
 Everything goes through obs-websocket (obsws.py) to the OBS running on this PC, and only touches the
 scene OBS is showing. ClipLab adds sources it needs ("Mic", "Display", "ClipLab Webcam") rather than
 renaming or deleting yours. The webcam's spot on OBS's canvas is what lets the engine cut it out for the
-Webcam on top layout.
+Webcam version of each short.
 """
 from .obsws import Obs, ObsError
 

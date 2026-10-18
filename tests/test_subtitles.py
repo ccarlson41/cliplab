@@ -18,7 +18,7 @@ from unittest import mock
 _home = tempfile.mkdtemp(prefix="cliplab-test-")
 os.environ["CLIPLAB_HOME"] = _home   # never your real ClipLab home
 
-from cliplab import engine, sounds, subtitles  # noqa: E402
+from cliplab import engine, layouts, sounds, subtitles  # noqa: E402
 from cliplab.settings import CONFIG, DEFAULTS, GAMES, HOME, NO_WINDOW, clean_config, load_config, write_json  # noqa: E402
 
 CFG = json.loads(json.dumps(DEFAULTS))
@@ -56,13 +56,16 @@ class WordTests(unittest.TestCase):
         self.assertEqual(subtitles.anchor("lower"), (2, 1450))       # bottom edge, above the watermark (y 1690)
         self.assertEqual(subtitles.anchor("upper"), (8, 420))         # under the play label (y 250-355)
         self.assertEqual(subtitles.anchor("center"), (5, 960))
-        self.assertEqual(subtitles.anchor("center", cam_top=608), (5, 608 + (1920 - 608) // 2))   # over the play
-        self.assertEqual(subtitles.anchor("upper", cam_top=608), (8, 778))
+        on_top = layouts.frame([0, 0.75, 0.25, 0.25])["subs"]   # a 16:9 webcam: a 608 px strip on top
+        self.assertEqual(subtitles.anchor("center", on_top), (5, 608 + (1920 - 608) // 2))   # over the play
+        self.assertEqual(subtitles.anchor("upper", on_top), (8, 778))
+        self.assertEqual(subtitles.anchor("sideways", on_top), (2, 1450))
 
     def test_ass_file(self):
         path = HOME / "work" / "t.ass"
         path.parent.mkdir(parents=True, exist_ok=True)
-        rel = subtitles.write_ass(path, [(0.5, 1.25, "GG {WP}"), (61.0, 62.5, "a\\b")], "pop", "upper", cam_top=608)
+        rel = subtitles.write_ass(path, [(0.5, 1.25, "GG {WP}"), (61.0, 62.5, "a\\b")], "pop", "upper",
+                                  layouts.frame([0, 0.75, 0.25, 0.25])["subs"])
         self.assertEqual(rel, "work/t.ass")
         text = path.read_text(encoding="utf-8")
         self.assertIn("PlayResX: 1080", text)
