@@ -7,6 +7,7 @@ anything missing falls back to DEFAULTS below.
 import ctypes
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,6 +16,8 @@ HOME = Path(os.environ.get("CLIPLAB_HOME") or Path.home() / "ClipLab").resolve()
 CONFIG = HOME / "config.json"
 STATE = HOME / "processed.json"       # one entry per clip (or reel) the engine has handled
 STATUS = HOME / "status.json"         # what the engine is rendering right now
+HOLD = HOME / "hold.json"             # the game renders are waiting on (see engine.GameHold); absent = not waiting
+RENDER_NOW = HOME / "render_now"      # the app's Render now: render anyway until the game closes
 HEARTBEAT = HOME / "heartbeat"        # touched every engine loop; the app shows it as health
 DECISIONS = HOME / "decisions.json"   # keep / toss choices from the app
 FAILED = HOME / "Failed"
@@ -28,6 +31,7 @@ WEB = PACKAGE / "web"
 
 VIDEO_EXT = {".mp4", ".mkv", ".mov"}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW for subprocesses on Windows
+RENDER_FLAGS = NO_WINDOW | (0x00004000 if os.name == "nt" else 0)   # + BELOW_NORMAL_PRIORITY_CLASS for ffmpeg
 ALL_STYLES = ("blur", "crop", "cam")   # cam = webcam on top, gameplay below (needs webcam.rect)
 THEMES = ("system", "dark", "light")
 ACCENTS = ("copper", "blue", "green", "purple", "pink")
@@ -73,6 +77,8 @@ DEFAULTS = {
     "maxrate_mbps": 8,
     "tag_wait": 20,
     "recycle_tossed_after_days": 14,
+    "wait_for_game_close": True,           # hold renders while a game runs on this PC (see games.py)
+    "game_processes": [],                  # more games to wait for, as exe names ("Fortnite.exe")
     # --- look and OBS extras (editable from the app) ---
     "theme": "system",
     "accent": "copper",
@@ -89,7 +95,7 @@ DEFAULTS = {
 }
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
                 "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound",
-                "subtitles", "subtitle_style", "subtitle_position", "intro")
+                "subtitles", "subtitle_style", "subtitle_position", "intro", "wait_for_game_close", "game_processes")
 CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS, "subtitles": SUBTITLES,
            "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS}
 LIMITS = {
@@ -129,7 +135,31 @@ def load_config():
             cfg[key] = DEFAULTS[key]
     cfg["webcam"]["rect"] = webcam_rect(cfg["webcam"]["rect"])
     cfg["feedback_url"] = web_address(cfg["feedback_url"])
+    cfg["wait_for_game_close"] = cfg["wait_for_game_close"] is not False   # only an explicit false turns it off
+    cfg["game_processes"] = process_names(cfg["game_processes"])[0] if isinstance(cfg["game_processes"], list) else []
     return cfg
+
+
+EXE_NAME = re.compile(r"[\w .()+&'-]{1,60}\.exe", re.IGNORECASE)
+
+
+def process_names(names):
+    """Clean a list of game exe names: trimmed, ".exe" added when missing, no paths, no repeats.
+    Returns (names, problem): problem names the first one that can't be a program name, and it's left out."""
+    out, seen, problem = [], set(), None
+    for raw in names[:30]:
+        name = str(raw).strip().strip('"')
+        if not name:
+            continue
+        if not name.lower().endswith(".exe"):
+            name += ".exe"
+        if not EXE_NAME.fullmatch(name):
+            problem = problem or f"\"{str(raw).strip()[:60]}\" isn't a program name. Use the name Task Manager's Details tab shows, like Fortnite.exe."
+            continue
+        if name.lower() not in seen:
+            seen.add(name.lower())
+            out.append(name)
+    return out[:20], problem
 
 
 def web_address(value):
@@ -204,6 +234,17 @@ def clean_config(changes):
             if value not in CHOICES[key]:
                 return cfg, f"Unknown {key.replace('_', ' ')}: {value}"
             cfg[key] = value
+        elif key == "wait_for_game_close":
+            if not isinstance(value, bool):
+                return cfg, "wait_for_game_close needs true or false."
+            cfg[key] = value
+        elif key == "game_processes":
+            if not isinstance(value, list):
+                return cfg, "game_processes needs a list of program names."
+            names, problem = process_names(value)
+            if problem:
+                return cfg, problem
+            cfg[key] = names
         elif key == "watermark":
             cfg[key] = "".join(c for c in str(value) if c.isalnum() or c in " @._-#")[:40].strip()
         else:
