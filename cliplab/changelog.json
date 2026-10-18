@@ -7,7 +7,8 @@
    {"icon": "🔄", "headline": "Automatic updates", "text": "ClipLab checks for new versions and installs them by itself once nothing is rendering, then shows you what's new."},
    {"icon": "🎚️", "headline": "Your call", "text": "In Settings > More, pick whether updates install by themselves, wait for your OK, or aren't checked at all. Check now and Update now are there too."},
    {"icon": "🛟", "headline": "Safe landings", "text": "Your settings and shorts are never touched, and if a new version doesn't start, ClipLab puts the old one back by itself."},
-   {"icon": "🧯", "headline": "No more stray shutdowns", "text": "After a PC restart, starting ClipLab could close an unrelated program. It now checks it's really ClipLab first."}
+   {"icon": "🧯", "headline": "No more stray shutdowns", "text": "After a PC restart, starting ClipLab could close an unrelated program. It now checks it's really ClipLab first."},
+   {"icon": "✂️", "headline": "Drag to trim", "text": "Grab the start or end of the re-cut timeline, or slide the whole window, and the player shows the exact frame you're cutting at. Works with a finger on your phone too."}
   ]
  },
  {
@@ -18,8 +19,7 @@
    {"icon": "🎉", "headline": "This pop-up!", "text": "Whenever ClipLab updates, you get a quick tour of what's new, confetti included."},
    {"icon": "📜", "headline": "Patch history", "text": "Tap ✨ at the top of the app to look back at every update ClipLab has had."},
    {"icon": "💡", "headline": "Request a feature", "text": "Got an idea? Write it up in the app and ClipLab opens a GitHub feature request with it filled in. Submit it there with a free GitHub account.", "action": "request"},
-   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"},
-   {"icon": "✂️", "headline": "Drag to trim", "text": "Grab the start or end of the re-cut timeline, or slide the whole window, and the player shows the exact frame you're cutting at. Works with a finger on your phone too."}
+   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"}
   ]
  },
  {
