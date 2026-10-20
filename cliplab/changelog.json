@@ -7,7 +7,8 @@
    {"icon": "🔄", "headline": "Automatic updates", "text": "ClipLab checks for new versions and installs them by itself once nothing is rendering, then shows you what's new."},
    {"icon": "🎚️", "headline": "Your call", "text": "In Settings > More, pick whether updates install by themselves, wait for your OK, or aren't checked at all. Check now and Update now are there too."},
    {"icon": "🛟", "headline": "Safe landings", "text": "Your settings and shorts are never touched, and if a new version doesn't start, ClipLab puts the old one back by itself."},
-   {"icon": "🧯", "headline": "No more stray shutdowns", "text": "After a PC restart, starting ClipLab could close an unrelated program. It now checks it's really ClipLab first."}
+   {"icon": "🧯", "headline": "No more stray shutdowns", "text": "After a PC restart, starting ClipLab could close an unrelated program. It now checks it's really ClipLab first."},
+   {"icon": "🎮", "headline": "Your game comes first", "text": "ClipLab now waits until you close your game before making shorts or installing updates, so your frames stay smooth mid-match. Clips line up and start rendering right after you're done. In a hurry? Hit Render now."}
   ]
  },
  {
