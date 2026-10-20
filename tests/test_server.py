@@ -1,4 +1,4 @@
-"""Tests for refusing POSTs that another website sends to ClipLab through your browser.
+"""Tests for refusing requests that another website sends to ClipLab through your browser.
 
 They run the app on a spare port with a throwaway ClipLab home, never your real one.
 """
@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from http.server import ThreadingHTTPServer
 
 os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
@@ -56,7 +57,33 @@ class CrossSiteTests(unittest.TestCase):
             self.assertTrue(server.cross_site(headers), kind)
 
 
-class PostTests(unittest.TestCase):
+class HostTests(unittest.TestCase):
+    """DNS rebinding: another site's domain pointed at this PC must not be answered."""
+
+    def setUp(self):
+        patcher = mock.patch.object(server.socket, "gethostname", return_value="Gaming-PC")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_this_pc_is_answered(self):
+        for host in ("localhost", "localhost:8765", "LocalHost:8765", "localhost.:8765",
+                     "127.0.0.1", "127.0.0.1:8765", "[::1]", "[::1]:8765",
+                     "gaming-pc:8765", "Gaming-PC", "gaming-pc.local:8765", "gaming-pc.lan", None, ""):
+            self.assertFalse(server.foreign_host(host), host)
+
+    def test_phone_on_the_home_network_is_answered(self):
+        for host in ("192.168.1.20:8765", "10.0.0.5", "[fe80::1]:8765", "[fd00::20]"):
+            self.assertFalse(server.foreign_host(host), host)
+
+    def test_other_names_are_refused(self):
+        for host in ("evil.example", "evil.example:8765", "localhost.evil.example:8765", "127.0.0.1.evil.example",
+                     "gaming-pc.evil.example", "other-pc:8765", "evil.local", "lan",
+                     ":8765", "localhost:", "localhost:abc", "localhost:8765:1", "[::1", "[::1]x", "[::1]:",
+                     "[127.0.0.1]:8765", "[evil.example]:8765", "::1"):
+            self.assertTrue(server.foreign_host(host), host)
+
+
+class HandlerTests(unittest.TestCase):
     """The real request handler: refused requests never reach the routes."""
 
     @classmethod
@@ -70,13 +97,17 @@ class PostTests(unittest.TestCase):
         cls.httpd.shutdown()
         cls.httpd.server_close()
 
-    def post(self, headers, body=b'{"key": "nope", "decision": "toss"}'):
+    def request(self, method, path, headers, body=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
-        conn.request("POST", "/api/decide", body=body, headers=headers)
+        conn.request(method, path, body=body, headers=headers)
         r = conn.getresponse()
-        data = json.loads(r.read() or b"{}")
+        raw = r.read()
         conn.close()
-        return r.status, data
+        return r.status, raw
+
+    def post(self, headers, body=b'{"key": "nope", "decision": "toss"}'):
+        status, raw = self.request("POST", "/api/decide", headers, body)
+        return status, json.loads(raw or b"{}")
 
     def test_app_page_gets_through(self):
         status, data = self.post({"Content-Type": JSON, "Origin": f"http://127.0.0.1:{self.port}"})
@@ -92,6 +123,21 @@ class PostTests(unittest.TestCase):
         status, data = self.post({"Content-Type": JSON, "Origin": "https://evil.example"})
         self.assertEqual(status, 403)
         self.assertIn("own page", data["error"])
+
+    def test_rebound_domain_cant_read_state(self):
+        status, _ = self.request("GET", "/api/state", {"Host": f"evil.example:{self.port}"})
+        self.assertEqual(status, 403)
+
+    def test_rebound_domain_cant_post(self):
+        status, _ = self.request("POST", "/api/decide", {"Host": f"evil.example:{self.port}", "Content-Type": JSON,
+                                                         "Origin": f"http://evil.example:{self.port}"}, b"{}")
+        self.assertEqual(status, 403)
+
+    def test_localhost_and_ip_addresses_get_the_page(self):
+        for host in (f"localhost:{self.port}", f"127.0.0.1:{self.port}", f"192.168.1.20:{self.port}"):
+            status, raw = self.request("GET", "/", {"Host": host})
+            self.assertEqual(status, 200, host)
+            self.assertIn(b"<html", raw.lower(), host)
 
 
 if __name__ == "__main__":
