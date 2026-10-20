@@ -4,6 +4,8 @@ Runs forever (started by the launcher). Each loop it:
   1. handles jobs the app dropped in requests/ (re-cut a short, build a reel),
   2. renders any new clip in the watch folder once it has stopped growing,
   3. once an hour, recycles tossed shorts older than the configured age.
+While a game is running on this PC (wait_for_game_close), steps 1 and 2 wait until it
+closes, so rendering doesn't cost frames; ffmpeg always runs at below-normal priority.
 
 Each clip becomes 1080x1920 shorts in one ffmpeg pass (one decode, one file per
 enabled style) plus a caption file, in output_dir/<date>/:
@@ -27,11 +29,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import layouts, obsctl, obsws, sounds, subtitles
+from . import games, layouts, obsctl, obsws, sounds, subtitles
 from .layouts import cam_height  # noqa: F401  (the top strip's height; tests and older callers use it from here)
-from .settings import (FAILED, GAMES, HEARTBEAT, HOME, LOGS, NO_WINDOW, REQUESTS, STATE, STATUS, TOSSED, VIDEO_EXT, WORK,
-                       cam_layout, check_folders, load_config, output_dir, read_json, recycle, tag_path, tool,
-                       watch_dir, webcam_rect, write_json)
+from .settings import (FAILED, GAMES, HEARTBEAT, HOLD, HOME, LOGS, RENDER_FLAGS, RENDER_NOW, REQUESTS, STATE, STATUS,
+                       TOSSED, VIDEO_EXT, WORK, cam_layout, check_folders, load_config, output_dir, read_json, recycle,
+                       tag_path, tool, watch_dir, webcam_rect, write_json)
 
 POLL_SECONDS = 5
 FONT = "C\\:/Windows/Fonts/arialbd.ttf"
@@ -52,7 +54,7 @@ def log(msg):
 
 
 def run(cmd, cwd=None):
-    return subprocess.run(cmd, capture_output=True, text=True, creationflags=NO_WINDOW, check=True, cwd=cwd)
+    return subprocess.run(cmd, capture_output=True, text=True, creationflags=RENDER_FLAGS, check=True, cwd=cwd)
 
 
 def probe(path, cfg=None):
@@ -256,6 +258,56 @@ def caption_for(tags, fallback, game="league"):
     title = tags.get("title") or " / ".join(e.get("label", "") for e in tags["events"])
     tag_champ = f" #{''.join(c for c in champ if c.isalnum()).lower()}" if champ else ""
     return f"{title}\n\n{hashtags}{tag_champ}\n"
+
+
+# ---------- waiting for the game ----------
+
+class GameHold:
+    """Holds renders while a game runs on this PC (the wait_for_game_close setting).
+
+    Looks for a game at most every CHECK seconds. Once it's gone, renders resume after GRACE
+    seconds, so a game restarting or the next match loading doesn't flip them on and off. The
+    app's Render now (the RENDER_NOW file) lets renders run until the game closes. The state is
+    kept in HOLD for the app. detect and clock are swappable for tests."""
+    CHECK = 5
+    GRACE = 20
+
+    def __init__(self, detect=games.detect, clock=time.time):
+        self.detect, self.clock = detect, clock
+        self.game, self.seen, self.checked, self.present = None, None, None, False
+        self.shown = None
+        HOLD.unlink(missing_ok=True)
+
+    def update(self, cfg):
+        """The game renders wait on right now, or None to go ahead."""
+        now = self.clock()
+        if not cfg["wait_for_game_close"]:
+            self.seen, self.present = None, False
+        elif self.checked is None or now - self.checked >= self.CHECK:
+            self.checked = now
+            found = self.detect(cfg)
+            self.present = bool(found)
+            if found:
+                self.game, self.seen = found, now
+        playing = self.seen is not None and now - self.seen < self.GRACE
+        if not playing:
+            RENDER_NOW.unlink(missing_ok=True)   # Render now only lasts until the game closes
+        override = playing and RENDER_NOW.exists()
+        self.show({"game": self.game, "override": override, "closing": not self.present} if playing else None)
+        return self.game if playing and not override else None
+
+    def show(self, hold):
+        if hold == self.shown:
+            return
+        if hold is None:
+            HOLD.unlink(missing_ok=True)
+            log(f"HOLD done waiting for {self.shown['game']}: rendering again")
+        else:
+            write_json(HOLD, hold)
+            if not self.shown or self.shown["override"] != hold["override"]:
+                log(f"HOLD Render now: rendering while {hold['game']} is open" if hold["override"]
+                    else f"HOLD waiting for {hold['game']} to close before rendering")
+        self.shown = hold
 
 
 # ---------- jobs ----------
@@ -525,11 +577,13 @@ def main():
     threading.Thread(target=listen_for_saves, daemon=True).start()
     sizes, stable = {}, {}   # size seen last poll / when it became stable (gives the tag file time to arrive)
     last_cleanup = 0.0
+    hold = GameHold()
     log(f"ClipLab engine watching {watch_dir(cfg)} -> {output_dir(cfg)}")
     while True:
         HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
-        handle_requests(state)
         cfg = load_config()
+        if not hold.update(cfg):   # while a game runs, jobs and clips stay queued, in order
+            handle_requests(state)
         root = watch_dir(cfg)
         for clip in candidates(root):
             key = str(clip.relative_to(root))
@@ -541,6 +595,8 @@ def main():
                 stable.pop(key, None)
                 continue
             if not load_tags(clip) and time.time() - stable.setdefault(key, time.time()) < cfg["tag_wait"]:
+                continue
+            if hold.update(cfg):   # a game started (or is still on): this clip waits its turn
                 continue
             sizes.pop(key, None)
             stable.pop(key, None)
@@ -556,7 +612,8 @@ def main():
                 STATUS.unlink(missing_ok=True)
             write_json(STATE, state)
             HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
-            handle_requests(state)   # let app jobs cut in between clips of a big batch
+            if not hold.update(cfg):
+                handle_requests(state)   # let app jobs cut in between clips of a big batch
         if time.time() - last_cleanup > 3600:
             recycle_old_tossed(cfg)
             last_cleanup = time.time()

@@ -61,6 +61,11 @@ Settings (⚙) > **Shorts**:
 
 In the player, **Ready to post** (P) downloads the short and copies its caption, ready to paste into TikTok, YouTube Shorts or Reels.
 
+## Your game comes first
+Making a short (ffmpeg, plus whisper when subtitles are on) is heavy work, so by default ClipLab waits until you close your game before it renders. Clips you save mid-match line up in **On the way** as *Waiting for League of Legends to close*, then render in order about 20 seconds after the game closes (the pause keeps a game restart from starting and stopping renders). **Render now** there renders anyway until the game closes. Re-cuts and reels wait too. Every render also runs at below-normal priority, so it gives way to anything else you're doing.
+
+ClipLab spots League of Legends (the match, not the client), Rainbow Six Siege and VALORANT by their programs. Add other games under Settings (⚙) > **Shorts** > *Other games to wait for*, using the program name from Task Manager's Details tab (like `Fortnite.exe`), or turn off *Wait until I close my game before rendering*. In two-PC mode nothing waits: the PC making shorts isn't the one playing.
+
 ## Other games
 Rendering works the same for any game; the **Game** setting only picks the caption hashtags. League of Legends, Rainbow Six Siege and VALORANT are built in. Only League has an auto-clipper (see Auto-clipping League above); for other games, press your OBS *Save Replay* hotkey after a good play.
 
@@ -112,7 +117,7 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |
-| **Settings (⚙)** | **Shorts:** game, versions, webcam layout, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app, Updates. |
+| **Settings (⚙)** | **Shorts:** game, waiting for your game to close, versions, webcam layout, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app, Updates. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -135,6 +140,8 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `subtitle_style`, `subtitle_position` | `bold`, `lower` | `bold`, `pop`, `boxed` or `clean`; `lower`, `center` or `upper` |
 | `intro` | `off` | `off`, `whoosh` (sound + zoom punch) or `punch` (zoom only) |
 | `cam_layout` | `{"layout": "top", "corner": "top-left", "size": "medium"}` | The Webcam version's layout for new shorts: `layout` is `top`, `bottom`, `split` or `corner`; `corner` (`top-left`, `top-right`, `bottom-left`, `bottom-right`) and `size` (`small`, `medium`, `large`) place the corner box |
+| `wait_for_game_close` | `true` | Hold renders while a game runs on this PC; see [Your game comes first](#your-game-comes-first) |
+| `game_processes` | `[]` | More games to wait for, as program names (`"Fortnite.exe"`) |
 | `auto_update` | `auto` | `auto` installs new releases by itself, `notify` only says one is out, `off` doesn't check (see [Updates](#updates)) |
 | `save_sound` | `off` | `off`, `chime`, `blip` or `pop`, played when OBS on this PC saves a replay |
 | `webcam` | *(none)* | Where the app placed your webcam in OBS (`rect` as fractions of the canvas, `corner`, `size`); used by the `cam` version |

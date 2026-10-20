@@ -14,7 +14,7 @@ import urllib.request
 import uuid
 
 from . import layouts
-from .settings import HOME, NO_WINDOW, SUBTITLE_POSITIONS, SUBTITLE_STYLES, WORK, tool
+from .settings import HOME, NO_WINDOW, RENDER_FLAGS, SUBTITLE_POSITIONS, SUBTITLE_STYLES, WORK, tool
 
 # file name, size in MB, SHA-256 (from Hugging Face's LFS pointers at the pinned revision below)
 MODELS = {"on": ("ggml-base.bin", 148, "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
@@ -116,7 +116,7 @@ def transcribe(src, start, length, model, cfg):
     try:
         subprocess.run([str(tool("ffmpeg", cfg)), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{start:.2f}",
                         "-t", f"{length:.2f}", "-i", str(src), "-vn", "-af", whisper, "-f", "null", "-"],
-                       cwd=HOME, capture_output=True, text=True, check=True, creationflags=NO_WINDOW,
+                       cwd=HOME, capture_output=True, text=True, check=True, creationflags=RENDER_FLAGS,
                        timeout=max(180, length * 8))
         return parse_words(out.read_text(encoding="utf-8").splitlines() if out.exists() else [])
     finally:

@@ -5,7 +5,7 @@ The launcher calls tick() every few seconds. tick() asks GitHub for the latest r
 waits for Update now in the app. Updating a downloaded copy of ClipLab (a zip install):
   1. download the release zip and its .sha256, and check the hash and that the zip's cliplab/__init__.py says that
      version
-  2. wait until the engine isn't rendering, then stop the engine and the app
+  2. wait until the engine isn't rendering or waiting for a game to close, then stop the engine and the app
   3. back up the code to backups\\<old version>, copy the new code in, and remove code files the new version dropped
      (by the list in .cliplab-files). Data (settings, shorts, logs, models...) is never touched
   4. start a new launcher; if the app doesn't answer with the new version within a minute, put the old code back,
@@ -27,8 +27,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__
-from .settings import (HOME, LOGS, NO_WINDOW, PACKAGE, REQUESTS, STATUS, load_config, output_dir, read_json,
-                       watch_dir, write_json)
+from .settings import (HEARTBEAT, HOLD, HOME, LOGS, NO_WINDOW, PACKAGE, REQUESTS, STATUS, load_config, output_dir,
+                       read_json, watch_dir, write_json)
 
 # CLIPLAB_UPDATE_URL points ClipLab at another "latest release" address, for testing updates against a local copy
 API = os.environ.get("CLIPLAB_UPDATE_URL") or "https://api.github.com/repos/ccarlson41/cliplab/releases/latest"
@@ -52,8 +52,8 @@ CODE_FILES = ("README.md", "LICENSE", "install.ps1", ".gitignore", ".gitattribut
 # never code, whatever a file list or a zip says: settings, shorts, logs, downloads, git (see settings.py, .gitignore)
 DATA_DIRS = {"inbox", "ready", "failed", "tossed", "work", "logs", "requests", "thumbs", "models", "bin", "sounds",
              "backups", "updates", "syncthing", ".stfolder", ".git", "__pycache__"}
-DATA_FILES = {"config.json", "processed.json", "decisions.json", "status.json", "heartbeat", ".stignore",
-              ".cliplab-files", "clipper/config.json"}
+DATA_FILES = {"config.json", "processed.json", "decisions.json", "status.json", "heartbeat", "hold.json", "render_now",
+              ".stignore", ".cliplab-files", "clipper/config.json"}
 
 
 class UpdateError(Exception):
@@ -362,11 +362,23 @@ def prune_backups():
 # --- the launcher's side ---
 
 def engine_busy():
-    """True while the engine is rendering, or has app jobs (re-cuts, reels) waiting."""
+    """True while the engine is rendering, has app jobs (re-cuts, reels) waiting, or is waiting for a game to close."""
     status = read_json(STATUS, None)
     if status and time.time() - status.get("started", 0) < 900:
         return True
-    return REQUESTS.exists() and any(REQUESTS.glob("*.json"))
+    return game_on() or (REQUESTS.exists() and any(REQUESTS.glob("*.json")))
+
+
+def game_on():
+    """True while the engine holds renders for a game (engine.GameHold), Render now or not: restarting ClipLab
+    then would land mid-match. A crashed engine leaves its hold.json behind, so that only counts while the
+    engine's heartbeat is fresh."""
+    if not HOLD.exists():
+        return False
+    try:
+        return time.time() - float(HEARTBEAT.read_text(encoding="utf-8")) < 30
+    except (OSError, ValueError):
+        return False
 
 
 def kill_tree(pid):
