@@ -10,6 +10,7 @@ import json
 import mimetypes
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -316,6 +317,41 @@ def cross_site(headers):
     return None
 
 
+def foreign_host(host):
+    """True if a request's Host header names some other website rather than this PC.
+
+    A site can point its own domain at 127.0.0.1 (DNS rebinding); the browser then treats the app as part
+    of that site, so its Origin and Host agree and cross_site() can't tell. Only names that can't belong to
+    another website are answered: localhost and names ending in .localhost (browsers send those to this PC
+    themselves), an IP address (how a phone reaches the app with allow_lan), and this PC's own name,
+    optionally ending in .local or .lan, with or without the port.
+    No Host at all (old scripts on this PC) is let through; browsers always send one."""
+    host = (host or "").strip().lower()
+    if not host:
+        return False
+    if host.startswith("["):
+        name, bracket, port = host[1:].partition("]")
+        if not bracket or port and not (port[:1] == ":" and port[1:].isdigit()):
+            return True
+        try:
+            return ipaddress.ip_address(name).version != 6
+        except ValueError:
+            return True
+    name, colon, port = host.partition(":")
+    if colon and not port.isdigit():
+        return True
+    name = name.rstrip(".")
+    try:
+        ipaddress.IPv4Address(name)
+        return False
+    except ValueError:
+        pass
+    if name == "localhost" or name.endswith(".localhost"):
+        return False
+    pc = socket.gethostname().lower()
+    return not name or name not in (pc, pc + ".local", pc + ".lan")
+
+
 def queue_job(job):
     REQUESTS.mkdir(parents=True, exist_ok=True)
     job["id"] = uuid.uuid4().hex[:8]
@@ -333,10 +369,13 @@ class Handler(BaseHTTPRequestHandler):
         ip = ipaddress.ip_address(self.client_address[0].split("%")[0])
         if getattr(ip, "ipv4_mapped", None):
             ip = ip.ipv4_mapped
-        if ip.is_loopback or ((ip.is_private or ip.is_link_local) and load_config()["allow_lan"]):
-            return True
-        self.send_error(403, "ClipLab only answers this PC (and your home network when allow_lan is on)")
-        return False
+        if not (ip.is_loopback or ((ip.is_private or ip.is_link_local) and load_config()["allow_lan"])):
+            self.send_error(403, "ClipLab only answers this PC (and your home network when allow_lan is on)")
+            return False
+        if foreign_host(self.headers.get("Host")):
+            self.send_error(403, "ClipLab only answers to localhost, this PC's IP address or its name")
+            return False
+        return True
 
     def discard_body(self):
         """Read and drop a refused POST's body: replying with it unread makes Windows reset the connection,
@@ -435,7 +474,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.local_only():
-            return
+            return self.discard_body()
         refused = cross_site(self.headers)
         if refused:
             self.discard_body()
