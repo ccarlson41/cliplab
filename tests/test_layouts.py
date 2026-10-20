@@ -196,6 +196,14 @@ class GraphTests(unittest.TestCase):
         self.assertIn("y=h*0.13:", crop)
         self.assertIn("y=h*0.88", crop)
 
+    def test_the_play_slides_clear_of_the_webcam(self):
+        g, _, _ = self.graph({"layout": "split"})   # the webcam is in OBS's bottom-left corner
+        self.assertIn("[v0g]crop='min(iw,ih*1.1250)':'min(ih,iw*0.8889)':"
+                      "'if(lte(0.2500*iw+2+ow,iw),max((iw-ow)/2,0.2500*iw+2),(iw-ow)/2)',scale=1080:960[v0game]", g)
+        right = engine.fill(1080, 1312, [0.75, 0, 0.25, 0.25])
+        self.assertIn(":'if(gte(0.7500*iw-2-ow,0),min((iw-ow)/2,0.7500*iw-2-ow),(iw-ow)/2)',", right)
+        self.assertIn(":'(iw-ow)/2',scale=1080:1312", engine.fill(1080, 1312))   # nothing to avoid: the middle
+
     def test_just_the_webcam_version(self):
         cmds = []
         with mock.patch.object(engine, "run", side_effect=lambda c, cwd=None: cmds.append(c)), \
@@ -220,15 +228,22 @@ class RenderTests(unittest.TestCase):
                         "-f", "lavfi", "-i", "color=c=0x2040c0:s=1280x720:r=30:d=4,drawbox=x=0:y=540:w=320:h=180:color=red:t=fill",
                         "-f", "lavfi", "-i", "sine=d=4", "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
                         "-c:a", "aac", str(cls.src)], check=True, creationflags=NO_WINDOW)
+        # a Large webcam (a third of OBS's width) and a lime line down the middle of the play, to see where the cut went
+        cls.lined = cls.tmp / "Replay lined.mp4"
+        subprocess.run([str(engine.tool("ffmpeg", cls.cfg)), "-loglevel", "error", "-y",
+                        "-f", "lavfi", "-i", "color=c=0x2040c0:s=1280x720:r=30:d=4,drawbox=x=0:y=482:w=422:h=238:color=red:"
+                        "t=fill,drawbox=x=636:y=0:w=8:h=720:color=0x00ff00:t=fill",
+                        "-f", "lavfi", "-i", "sine=d=4", "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+                        "-c:a", "aac", str(cls.lined)], check=True, creationflags=NO_WINDOW)
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def render(self, layout, name, **cfg):
-        out = self.tmp / name
-        names = engine.render(self.src, out, self.src.stem, 0.5, 3, True, [("TRIPLE KILL", 0.5)], dict(self.cfg, **cfg),
-                              WIDE, None, layout)
+    def render(self, layout, name, src=None, webcam=WIDE, **cfg):
+        out, src = self.tmp / name, src or self.src
+        names = engine.render(src, out, src.stem, 0.5, 3, True, [("TRIPLE KILL", 0.5)], dict(self.cfg, **cfg),
+                              webcam, None, layout)
         video = out / names[0]
         size = subprocess.run([str(engine.tool("ffprobe", self.cfg)), "-v", "error", "-select_streams", "v:0",
                                "-show_entries", "stream=width,height", "-of", "csv=p=0", str(video)],
@@ -249,6 +264,26 @@ class RenderTests(unittest.TestCase):
     def assertPlay(self, px):
         r, g, b = px
         self.assertTrue(b > 140 and r < 90, px)
+
+    def assertMiddleLine(self, px):
+        r, g, b = px
+        self.assertTrue(g > 180 and r < 100 and b < 120, px)
+
+    def test_the_play_leaves_a_large_webcam_out(self):
+        large = [0, 0.67, 0.33, 0.33]   # OBS's bottom-left corner, Large
+        # Split: centered, the play half's cut (810 of 1280 px) would take in the webcam's right edge
+        px = self.render({"layout": "split"}, "split-clear", self.lined, large)
+        self.assertPlay(px(40, 1850))            # the play's bottom-left corner shows the play, not your face again
+        self.assertMiddleLine(px(287, 1100))     # the cut starts just right of the webcam: (640 - 424) / 810 * 1080
+        # Top: the same with its narrower cut (593 px)
+        px = self.render({"layout": "top"}, "top-clear", self.lined, large)
+        self.assertPlay(px(40, 1800))
+        self.assertMiddleLine(px(393, 900))      # (640 - 424) / 593 * 1080
+
+    def test_the_play_stays_in_the_middle_when_it_cant_clear_the_webcam(self):
+        wide = [0, 0.5, 0.7, 0.5]   # too wide to cut around
+        px = self.render({"layout": "split"}, "split-middle", self.lined, wide)
+        self.assertMiddleLine(px(540, 1100))
 
     def test_top(self):
         px = self.render({"layout": "top"}, "top")

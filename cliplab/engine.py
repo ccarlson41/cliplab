@@ -115,9 +115,18 @@ def plan(duration, tags, cfg, override=None):
 
 # ---------- rendering ----------
 
-def fill(w, h):
-    """Filters that cut the middle of the picture to w:h and scale it to w x h, whatever shape the input is."""
-    return f"crop='min(iw,ih*{w / h:.4f})':'min(ih,iw*{h / w:.4f})',scale={w}:{h}"
+def fill(w, h, avoid=None):
+    """Filters that cut the middle of the picture to w:h and scale it to w x h, whatever shape the input is.
+    avoid = the webcam's rect in the picture: the cut slides sideways just enough to leave the webcam out (so
+    your face doesn't show again at the edge of the play), or stays in the middle when it can't."""
+    x = "(iw-ow)/2"
+    if avoid:
+        left, right = avoid[0], avoid[0] + avoid[2]
+        if left + right < 1:   # the webcam is on the left: start the cut just right of it
+            x = f"if(lte({right:.4f}*iw+2+ow,iw),max({x},{right:.4f}*iw+2),{x})"
+        else:                  # on the right: end the cut just left of it
+            x = f"if(gte({left:.4f}*iw-2-ow,0),min({x},{left:.4f}*iw-2-ow),{x})"
+    return f"crop='min(iw,ih*{w / h:.4f})':'min(ih,iw*{h / w:.4f})':'{x}',scale={w}:{h}"
 
 
 def rounded(r):
@@ -131,7 +140,7 @@ def cam_graph(src, out, webcam, cam):
     cx, cy, cw, ch = cam["cam"]
     face = (f"[{src}c]crop=iw*{w:.4f}:ih*{h:.4f}:iw*{x:.4f}:ih*{y:.4f},"
             f"scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch}")
-    game = f"[{src}g]{fill(*cam['game'][2:])}[{src}game]"
+    game = f"[{src}g]{fill(*cam['game'][2:], avoid=webcam)}[{src}game]"
     if cam["layout"] != "corner":   # two strips, one above the other
         order = f"[{src}game][{src}cam]" if cam["layout"] == "bottom" else f"[{src}cam][{src}game]"
         return (f"[{src}]split=2[{src}c][{src}g];{face}[{src}cam];{game};"
