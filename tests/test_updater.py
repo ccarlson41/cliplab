@@ -20,7 +20,7 @@ from pathlib import Path
 os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never your real ClipLab home
 
 from cliplab import __version__, launcher, updater  # noqa: E402
-from cliplab.settings import CONFIG, HOME, REQUESTS, STATUS, write_json  # noqa: E402
+from cliplab.settings import CONFIG, HEARTBEAT, HOLD, HOME, REQUESTS, STATUS, write_json  # noqa: E402
 
 NEXT = "99.0.0"   # a version that's always newer than this one
 REAL_ANSWERS = updater.answers
@@ -471,6 +471,23 @@ class EngineBusyTests(unittest.TestCase):
         self.assertFalse(updater.engine_busy())
         write_json(STATUS, {"started": time.time()})
         self.assertTrue(updater.engine_busy())
+
+    def test_waits_while_a_game_is_on(self):
+        HOME.mkdir(parents=True, exist_ok=True)
+        try:
+            HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
+            self.assertFalse(updater.engine_busy())
+            write_json(HOLD, {"game": "VALORANT", "override": False, "closing": False})
+            self.assertTrue(updater.engine_busy())   # no restart mid-match
+            write_json(HOLD, {"game": "VALORANT", "override": True, "closing": False})
+            self.assertTrue(updater.engine_busy())   # Render now still means a game is on
+            HEARTBEAT.write_text(str(time.time() - 120), encoding="utf-8")
+            self.assertFalse(updater.engine_busy())   # a crashed engine's hold.json doesn't block updates
+            HEARTBEAT.unlink()
+            self.assertFalse(updater.engine_busy())
+        finally:
+            HOLD.unlink(missing_ok=True)
+            HEARTBEAT.unlink(missing_ok=True)
 
 
 class LauncherPidTests(unittest.TestCase):

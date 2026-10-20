@@ -23,8 +23,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import __version__, obs, obsctl, obsws, sounds, subtitles, updater
-from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOME, NO_WINDOW, PACKAGE, REQUESTS, STATE, STATUS,
-                       THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
+from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOLD, HOME, NO_WINDOW, PACKAGE, RENDER_NOW, REQUESTS,
+                       STATE, STATUS, THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
                        tool, watch_dir, webcam_rect, write_json)
 
 MULTI = ("DOUBLE", "TRIPLE", "QUADRA", "PENTA")
@@ -80,6 +80,13 @@ def engine_health():
     busy = bool(status) and time.time() - status.get("started", 0) < 900
     return {"alive": busy or (age is not None and age < 30), "busy": busy, "status": status,
             "heartbeat_age": None if age is None else round(age)}
+
+
+def game_hold(health):
+    """The game the engine is holding renders for ({"game", "override", "closing"}), or None.
+    A stopped engine leaves its last state behind, so that only counts while it's alive."""
+    hold = read_json(HOLD, None) if health["alive"] else None
+    return hold if isinstance(hold, dict) and hold.get("game") else None
 
 
 def recorded_at(key, fallback):
@@ -245,6 +252,7 @@ def build_state():
     return {"peer": {"name": peer["name"]} if peer.get("name") else None, "online": sync["online"],
             "paused": sync["paused"], "engine": health, "clips": clips, "stats": stats, "config": editable,
             "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
+            "hold": game_hold(health),
             "speech_to_text": subtitles.ffmpeg_has_whisper(cfg),   # checked once, then cached
             "queue": len(pending), "version": __version__, "update": updater.summary(cfg),
             "now": datetime.now().isoformat(timespec="seconds")}
@@ -535,6 +543,12 @@ class Handler(BaseHTTPRequestHandler):
                 cfg["styles"] = (styles + ["cam"]) if cfg["webcam"]["rect"] else (styles or ["crop"])
                 write_json(CONFIG, cfg)
             return self.send_json({"ok": True, "note": note})
+
+        if route == "/api/render_now":   # render anyway until the game closes (the engine clears it then)
+            if not game_hold(engine_health()):
+                return self.send_json({"error": "Nothing is waiting for a game right now."}, 400)
+            RENDER_NOW.write_text(str(time.time()), encoding="utf-8")
+            return self.send_json({"ok": True})
 
         if route == "/api/update/check":   # Check now (a POST: it reaches out to GitHub)
             updater.check_now()
