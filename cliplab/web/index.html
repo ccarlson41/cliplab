@@ -61,6 +61,8 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .trip-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .trip-name { font: 13px var(--mono); overflow-wrap: anywhere; min-width: 0; }
 .trip-note { color: var(--muted); font-size: 13px; }
+.holdbar { display: flex; gap: 8px 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--warn); border-radius: 6px; padding: 10px 14px; font-size: 13px; }
+.holdbar b { font-weight: 600; }
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .step { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-top: 3px solid var(--line); padding-top: 5px; }
 .step.done { border-color: var(--ok); color: var(--fg); }
@@ -164,6 +166,12 @@ dialog#install { width: min(560px, calc(100vw - 24px)); }
 .install-steps p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 .install-steps .tag { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--sun); margin-left: 6px; }
 .about { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+/* Updates: a line in Settings > More, and a banner under the header while one is out or being installed */
+.upd-banner { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; padding: 9px 10px 9px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--sun) 55%, var(--line)); background: color-mix(in srgb, var(--sun) 12%, var(--panel)); }
+.upd-banner.bad { border-color: color-mix(in srgb, var(--bad) 60%, var(--line)); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.upd-banner .msg { flex: 1 1 260px; min-width: 0; display: flex; gap: 9px; align-items: center; }
+.upd-banner .icon-btn { width: 28px; height: 28px; border: 0; color: var(--muted); }
 @media (max-width: 480px) {
   .news-hero h3 { font-size: 24px; } .news-burst { font-size: 34px; }
   .news-panel, .news-hero { padding-left: 16px; padding-right: 16px; }
@@ -301,6 +309,13 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
     </div>
   </header>
 
+  <div class="upd-banner" id="updBanner" role="status" hidden>
+    <span class="msg"><span class="dot" id="updDot"></span><span id="updMsg"></span></span>
+    <a class="btn small" id="updPage" href="#" target="_blank" rel="noopener">What's in it?</a>
+    <button class="btn small primary" type="button" id="updNow">Update now</button>
+    <button class="icon-btn" type="button" id="updHide" aria-label="Hide this message">×</button>
+  </div>
+
   <section class="stats" id="stats" aria-label="Stats"></section>
 
   <section id="laneBox" hidden>
@@ -393,6 +408,11 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
       <div class="field"><label for="s_game">Game</label>
         <select id="s_game"></select>
         <span class="hint">Sets the hashtags in captions. Clips from the League auto-clipper always count as League. Only League has an auto-clipper, so other games don't wait for a tag file.</span></div>
+      <div class="field"><label><input type="checkbox" id="s_wait_for_game_close"> Wait until I close my game before rendering</label>
+        <span class="hint">Making shorts is heavy work for your PC, so new ones wait until your game closes and your frames stay smooth. ClipLab spots League, Siege and VALORANT by itself. With two PCs nothing waits: the PC making shorts isn't the one playing.</span></div>
+      <div class="field"><label for="s_game_processes">Other games to wait for</label>
+        <input type="text" id="s_game_processes" placeholder="Fortnite.exe, cs2.exe" autocomplete="off" spellcheck="false">
+        <span class="hint">Program names from Task Manager's Details tab, separated by commas.</span></div>
       <div class="field"><label>Versions to make</label>
         <div class="row" style="flex-wrap:wrap"><label><input type="checkbox" id="s_blur" value="blur"> Blur fill</label><label><input type="checkbox" id="s_crop" value="crop"> Center crop</label><label><input type="checkbox" id="s_cam" value="cam"> Webcam on top</label></div>
         <span class="hint" id="camHint"></span></div>
@@ -496,6 +516,14 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
           <button class="btn" type="button" id="moreNews">✨ What's new &amp; patch history</button>
           <button class="btn" type="button" id="moreRequest">💡 Request a feature</button>
           <button class="btn" type="button" id="moreInstall">📲 Install app</button>
+        </div>
+        <div class="field">
+          <label for="s_auto_update">Updates</label>
+          <div class="row"><select id="s_auto_update">
+            <option value="auto">Install them by themselves</option><option value="notify">Tell me first</option><option value="off">Don't check</option></select>
+            <button class="btn small" type="button" id="updCheck">Check now</button></div>
+          <span class="hint" id="updInfo"></span>
+          <div class="actions" id="updRow" hidden><button class="btn small primary" type="button" id="updApply"></button></div>
         </div>
       </div>
     </div>
@@ -610,6 +638,7 @@ async function post(url, body) {
 }
 
 /* ---------- lane ---------- */
+let laneHtml = "";
 const STEPS = ["Copy", "Tag", "Render", "Ready"];
 function steps(c) {
   const at = { copying: 0, queued: 1, rendering: 2, failed: 2 }[c.stage];
@@ -618,6 +647,8 @@ function steps(c) {
 function note(c) {
   const from = state.peer ? `Copying from ${state.peer.name}` : "Copying";
   if (c.stage === "copying") return c.pct != null ? `${from} · ${c.pct}%` : from;
+  const hold = state.hold;
+  if (c.stage === "queued" && hold && !hold.override) return hold.closing ? `${hold.game} closed, starting in a moment` : `Waiting for ${hold.game} to close`;
   if (c.stage === "queued") return c.tagged ? "Tagged, waiting its turn" : "Waiting for its tag file";
   if (c.stage === "rendering") return c.note || "Rendering";
   if (c.stage === "failed") return "Render failed: " + (c.reason || "see ClipLab's Failed folder");
@@ -660,7 +691,9 @@ function render() {
     const main = s.online ? (s.paused ? ["warn", "in a game (sync paused)"] : ["ok", "connected"]) : s.online === false ? ["bad", "offline"] : ["", "unknown"];
     $("pMain").innerHTML = `<span class="dot ${main[0]}"></span>${esc(s.peer.name)} ${main[1]}`;
   }
-  const e = !eng.alive ? ["bad", "stopped"] : eng.busy ? ["busy", "rendering"] : s.queue ? ["busy", `${s.queue} job${s.queue > 1 ? "s" : ""} queued`] : ["ok", "idle"];
+  const waiting = s.hold && !s.hold.override && (s.queue || s.clips.some(c => c.stage === "queued"));
+  const e = !eng.alive ? ["bad", "stopped"] : eng.busy ? ["busy", "rendering"] : waiting ? ["warn", `waiting for ${esc(s.hold.game)}`]
+    : s.queue ? ["busy", `${s.queue} job${s.queue > 1 ? "s" : ""} queued`] : ["ok", "idle"];
   $("pEngine").innerHTML = `<span class="dot ${e[0]}"></span>Engine ${e[1]}`;
 
   const st = s.stats || {};
@@ -668,9 +701,15 @@ function render() {
     .map(([k, v]) => `<div><b>${v ?? 0}</b><span>${k}</span></div>`).join("");
 
   const moving = s.clips.filter(c => c.stage !== "ready");
-  $("laneBox").hidden = !moving.length;
-  $("lane").innerHTML = moving.map(c => `<div class="trip"><div class="trip-top"><span class="trip-name">${esc(c.key)}</span><span class="trip-note">${esc(note(c))}</span></div>
+  const holdBar = waiting || (s.hold && s.hold.override && (s.queue || moving.some(c => c.stage === "queued")))
+    ? `<div class="holdbar"><span>${s.hold.override ? `Rendering now, even with <b>${esc(s.hold.game)}</b> open.`
+        : s.hold.closing ? `<b>${esc(s.hold.game)}</b> closed. Rendering starts in a moment.`
+        : `⏸ Shorts wait until you close <b>${esc(s.hold.game)}</b>, so your game runs smooth.`}</span>
+        ${s.hold.override || s.hold.closing ? "" : '<button class="btn small" type="button" id="renderNow">Render now</button>'}</div>` : "";
+  $("laneBox").hidden = !moving.length && !holdBar;
+  const lane = holdBar + moving.map(c => `<div class="trip"><div class="trip-top"><span class="trip-name">${esc(c.key)}</span><span class="trip-note">${esc(note(c))}</span></div>
     ${c.stage === "copying" && c.pct != null ? `<div class="bar"><span style="width:${c.pct}%"></span></div>` : ""}<div class="steps">${steps(c)}</div></div>`).join("");
+  if (lane !== laneHtml) $("lane").innerHTML = laneHtml = lane;   // redraw only on change, so Render now can be clicked
 
   const ready = s.clips.filter(c => c.stage === "ready");
   const counts = { new: ready.filter(isNew).length, kept: ready.filter(c => c.decision === "keep").length, all: ready.length };
@@ -707,6 +746,7 @@ function render() {
   if (open) fillSheet(false);
   if (s.setup_needed && !guide.shown && !document.querySelector("dialog[open]")) openGuide();
   checkNews();
+  drawUpdates();
 }
 
 /* ---------- player sheet ---------- */
@@ -789,6 +829,9 @@ function openSettings() {
   $("s_save_sound").value = c.save_sound || "off";
   $("s_subtitles").value = c.subtitles || "off";
   $("s_intro").value = c.intro || "off";
+  $("s_wait_for_game_close").checked = c.wait_for_game_close !== false;
+  $("s_game_processes").value = (c.game_processes || []).join(", ");
+  $("s_game_processes").disabled = !$("s_wait_for_game_close").checked;
   subLook = { style: c.subtitle_style || "bold", position: c.subtitle_position || "lower" };
   drawSubPreview();
   obsData = null;   // re-read OBS each time Settings opens
@@ -1163,6 +1206,78 @@ $("moreNews").addEventListener("click", () => { $("settings").close(); openNews(
 $("moreRequest").addEventListener("click", () => { $("settings").close(); openNews("request"); });
 $("moreInstall").addEventListener("click", installApp);
 
+/* ---------- updates ---------- */
+// The launcher checks GitHub for new releases and installs them (updater.py). This shows where that's at: a line in
+// Settings > More and a banner, with Check now and Update now. After an update the page reloads (see checkNews) and
+// the What's new pop-up shows.
+const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };   // no repeat announcements
+function updateBanner(u) {   // [message, tone ("busy", "bad" or ""), show Update now]
+  const p = u.progress, v = p ? p.version : u.latest;
+  if (p && p.state === "downloading") return [`Downloading ClipLab ${v}…`, "busy", false];
+  if (p && p.state === "waiting") return [state.hold ? `ClipLab ${v} installs once you close ${state.hold.game}.`
+    : `ClipLab ${v} installs as soon as nothing is rendering.`, "busy", false];
+  if (p && (p.state === "installing" || p.state === "restarting")) return [`Updating ClipLab to ${v}. It restarts in a moment.`, "busy", false];
+  if (p) return [p.message, "bad", p.state === "failed" && u.available && u.launcher];
+  if (!u.available) return null;
+  if (u.blocked) return [`ClipLab ${v} is out. This copy is a git checkout (${u.blocked}), so update it with git pull.`, "", false];
+  if (!u.launcher) return [`ClipLab ${v} is out. Run the install line again to get it.`, "", false];
+  if (u.requested) return [`Updating ClipLab to ${v} in a moment…`, "busy", false];
+  return [`ClipLab ${v} is out.${u.mode === "auto" && !u.skipped ? " It installs itself once nothing is rendering." : ""}`, "", true];
+}
+function drawUpdates() {
+  const u = state.update; if (!u) return;
+  const banner = updateBanner(u), key = `${u.latest}:${u.progress ? u.progress.state : "out"}`;
+  let hidden = !banner;
+  try { hidden = hidden || localStorage.getItem("cl-upd-hide") === key; } catch (e) {}
+  $("updBanner").hidden = hidden;
+  if (banner) {
+    setText($("updMsg"), banner[0]);
+    $("updBanner").classList.toggle("bad", banner[1] === "bad");
+    $("updDot").className = "dot" + (banner[1] === "busy" ? " busy" : banner[1] === "bad" ? " bad" : " warn");
+    $("updNow").hidden = !banner[2];
+    $("updPage").hidden = !u.page || banner[1] === "busy";
+    if (u.page) $("updPage").href = u.page;
+  }
+  if (document.activeElement !== $("s_auto_update")) $("s_auto_update").value = u.mode;
+  const when = u.checked ? `checked ${ago(u.checked)}` : "not checked yet";
+  setText($("updInfo"), [
+    u.available ? `ClipLab ${u.latest} is out (${when}).` : u.error ? `${u.error} (${when})` : `Up to date (${when}).`,
+    banner && banner[1] && u.progress ? banner[0] : "",
+    u.mode === "off" ? "ClipLab won't check by itself." : "",
+    u.kind === "git" ? (u.blocked ? `This copy is a git checkout (${u.blocked}), so it isn't updated by itself.` : "This copy is a git checkout of main: updates come with git pull --ff-only.") : "",
+  ].filter(Boolean).join(" "));
+  const busy = u.progress && ["downloading", "waiting", "installing", "restarting"].includes(u.progress.state);
+  $("updRow").hidden = !(u.available && u.launcher && !u.blocked && !busy && !u.requested);   // here, a skipped version can be retried
+  setText($("updApply"), `Update to ${u.latest} now`);
+}
+async function updateNow() {
+  const r = await post("/api/update/apply", { version: state.update.latest });
+  if (!r) return;
+  state.update = r.update; drawUpdates();
+  toast(`Updating to ${state.update.latest}. ClipLab restarts in a moment.`);
+}
+$("updNow").addEventListener("click", updateNow);
+$("updApply").addEventListener("click", updateNow);
+$("updHide").addEventListener("click", () => {
+  const u = state.update; $("updBanner").hidden = true;
+  try { localStorage.setItem("cl-upd-hide", `${u.latest}:${u.progress ? u.progress.state : "out"}`); } catch (e) {}
+});
+$("updCheck").addEventListener("click", async () => {
+  const b = $("updCheck"); b.disabled = true; b.textContent = "Checking…";
+  const r = await post("/api/update/check", {});
+  b.disabled = false; b.textContent = "Check now";
+  if (!r) return;
+  state.update = r.update; drawUpdates();
+  toast(r.update.available ? `ClipLab ${r.update.latest} is out` : r.update.error || "ClipLab is up to date", !!(r.update.error && !r.update.available));
+});
+$("s_auto_update").addEventListener("change", async e => {
+  const mode = e.target.value;
+  if (!(await post("/api/config", { auto_update: mode }))) { e.target.value = state.update.mode; return; }
+  state.config.auto_update = mode; state.update.mode = mode; drawUpdates();
+  toast({ auto: "Updates install by themselves", notify: "ClipLab will tell you when an update is out", off: "ClipLab won't check for updates" }[mode]);
+});
+
 /* ---------- data ---------- */
 async function refresh() {
   try { const r = await fetch("/api/state", { cache: "no-store" }); state = await r.json(); render(); }
@@ -1279,13 +1394,19 @@ $("s_game").addEventListener("change", e => {   // only League's auto-clipper wr
   if (e.target.value !== "league") $("s_tag_wait").value = 0;
   else if (Number($("s_tag_wait").value) === 0) $("s_tag_wait").value = 20;
 });
+$("s_wait_for_game_close").addEventListener("change", e => { $("s_game_processes").disabled = !e.target.checked; });
+$("lane").addEventListener("click", async e => {
+  if (!e.target.closest("#renderNow")) return;
+  if (await post("/api/render_now", {})) { toast(`Rendering now. Back to waiting next time you play ${state.hold ? state.hold.game : ""}`.trim()); refresh(); }
+});
 $("s_blur_zoom").addEventListener("input", e => { $("o_blur_zoom").textContent = Math.round(e.target.value * 100) + "%"; });
 $("settingsForm").addEventListener("submit", async e => {
   e.preventDefault();
   const body = { game: $("s_game").value, styles: ["blur", "crop", "cam"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value,
                  theme: look.theme, accent: look.accent, save_sound: $("s_save_sound").value,
                  subtitles: $("s_subtitles").value, subtitle_style: subLook.style, subtitle_position: subLook.position,
-                 intro: $("s_intro").value };
+                 intro: $("s_intro").value, wait_for_game_close: $("s_wait_for_game_close").checked,
+                 game_processes: $("s_game_processes").value.split(/[,\n]/).map(x => x.trim()).filter(Boolean) };
   for (const k of NUM_FIELDS) body[k] = Number($("s_" + k).value);
   const r = await post("/api/config", body);
   if (r) { toast("Settings saved"); state.config = { ...state.config, theme: look.theme, accent: look.accent }; $("settings").close(); refresh(); }

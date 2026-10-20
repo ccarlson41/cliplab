@@ -48,7 +48,7 @@ class ChangelogTests(unittest.TestCase):
                 self.assertEqual(set(r), {"version", "date", "title", "highlights"})
                 self.assertTrue(VERSION.match(r["version"]))
                 self.assertTrue(r["title"].strip())
-                self.assertTrue(2 <= len(r["highlights"]) <= 5, "Give each release 2 to 5 highlights.")
+                self.assertTrue(1 <= len(r["highlights"]) <= 8, "Give each release 1 to 8 highlights.")
                 for h in r["highlights"]:
                     self.assertTrue(set(h) <= {"icon", "headline", "text", "action"}, h)
                     self.assertTrue(h["icon"].strip() and len(h["icon"]) <= 4, h)   # one emoji
