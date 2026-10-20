@@ -61,6 +61,8 @@ h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .trip-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .trip-name { font: 13px var(--mono); overflow-wrap: anywhere; min-width: 0; }
 .trip-note { color: var(--muted); font-size: 13px; }
+.holdbar { display: flex; gap: 8px 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--warn); border-radius: 6px; padding: 10px 14px; font-size: 13px; }
+.holdbar b { font-weight: 600; }
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .step { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-top: 3px solid var(--line); padding-top: 5px; }
 .step.done { border-color: var(--ok); color: var(--fg); }
@@ -411,6 +413,11 @@ kbd { font: 10.5px var(--mono); border: 1px solid var(--line); border-bottom-wid
       <div class="field"><label for="s_game">Game</label>
         <select id="s_game"></select>
         <span class="hint">Sets the hashtags in captions. Clips from the League auto-clipper always count as League. Only League has an auto-clipper, so other games don't wait for a tag file.</span></div>
+      <div class="field"><label><input type="checkbox" id="s_wait_for_game_close"> Wait until I close my game before rendering</label>
+        <span class="hint">Making shorts is heavy work for your PC, so new ones wait until your game closes and your frames stay smooth. ClipLab spots League, Siege and VALORANT by itself. With two PCs nothing waits: the PC making shorts isn't the one playing.</span></div>
+      <div class="field"><label for="s_game_processes">Other games to wait for</label>
+        <input type="text" id="s_game_processes" placeholder="Fortnite.exe, cs2.exe" autocomplete="off" spellcheck="false">
+        <span class="hint">Program names from Task Manager's Details tab, separated by commas.</span></div>
       <div class="field"><label>Versions to make</label>
         <div class="row" style="flex-wrap:wrap"><label><input type="checkbox" id="s_blur" value="blur"> Blur fill</label><label><input type="checkbox" id="s_crop" value="crop"> Center crop</label><label><input type="checkbox" id="s_cam" value="cam"> Webcam on top</label></div>
         <span class="hint" id="camHint"></span></div>
@@ -612,6 +619,7 @@ async function post(url, body) {
 }
 
 /* ---------- lane ---------- */
+let laneHtml = "";
 const STEPS = ["Copy", "Tag", "Render", "Ready"];
 function steps(c) {
   const at = { copying: 0, queued: 1, rendering: 2, failed: 2 }[c.stage];
@@ -620,6 +628,8 @@ function steps(c) {
 function note(c) {
   const from = state.peer ? `Copying from ${state.peer.name}` : "Copying";
   if (c.stage === "copying") return c.pct != null ? `${from} · ${c.pct}%` : from;
+  const hold = state.hold;
+  if (c.stage === "queued" && hold && !hold.override) return hold.closing ? `${hold.game} closed, starting in a moment` : `Waiting for ${hold.game} to close`;
   if (c.stage === "queued") return c.tagged ? "Tagged, waiting its turn" : "Waiting for its tag file";
   if (c.stage === "rendering") return c.note || "Rendering";
   if (c.stage === "failed") return "Render failed: " + (c.reason || "see ClipLab's Failed folder");
@@ -662,7 +672,9 @@ function render() {
     const main = s.online ? (s.paused ? ["warn", "in a game (sync paused)"] : ["ok", "connected"]) : s.online === false ? ["bad", "offline"] : ["", "unknown"];
     $("pMain").innerHTML = `<span class="dot ${main[0]}"></span>${esc(s.peer.name)} ${main[1]}`;
   }
-  const e = !eng.alive ? ["bad", "stopped"] : eng.busy ? ["busy", "rendering"] : s.queue ? ["busy", `${s.queue} job${s.queue > 1 ? "s" : ""} queued`] : ["ok", "idle"];
+  const waiting = s.hold && !s.hold.override && (s.queue || s.clips.some(c => c.stage === "queued"));
+  const e = !eng.alive ? ["bad", "stopped"] : eng.busy ? ["busy", "rendering"] : waiting ? ["warn", `waiting for ${esc(s.hold.game)}`]
+    : s.queue ? ["busy", `${s.queue} job${s.queue > 1 ? "s" : ""} queued`] : ["ok", "idle"];
   $("pEngine").innerHTML = `<span class="dot ${e[0]}"></span>Engine ${e[1]}`;
 
   const st = s.stats || {};
@@ -670,9 +682,15 @@ function render() {
     .map(([k, v]) => `<div><b>${v ?? 0}</b><span>${k}</span></div>`).join("");
 
   const moving = s.clips.filter(c => c.stage !== "ready");
-  $("laneBox").hidden = !moving.length;
-  $("lane").innerHTML = moving.map(c => `<div class="trip"><div class="trip-top"><span class="trip-name">${esc(c.key)}</span><span class="trip-note">${esc(note(c))}</span></div>
+  const holdBar = waiting || (s.hold && s.hold.override && (s.queue || moving.some(c => c.stage === "queued")))
+    ? `<div class="holdbar"><span>${s.hold.override ? `Rendering now, even with <b>${esc(s.hold.game)}</b> open.`
+        : s.hold.closing ? `<b>${esc(s.hold.game)}</b> closed. Rendering starts in a moment.`
+        : `⏸ Shorts wait until you close <b>${esc(s.hold.game)}</b>, so your game runs smooth.`}</span>
+        ${s.hold.override || s.hold.closing ? "" : '<button class="btn small" type="button" id="renderNow">Render now</button>'}</div>` : "";
+  $("laneBox").hidden = !moving.length && !holdBar;
+  const lane = holdBar + moving.map(c => `<div class="trip"><div class="trip-top"><span class="trip-name">${esc(c.key)}</span><span class="trip-note">${esc(note(c))}</span></div>
     ${c.stage === "copying" && c.pct != null ? `<div class="bar"><span style="width:${c.pct}%"></span></div>` : ""}<div class="steps">${steps(c)}</div></div>`).join("");
+  if (lane !== laneHtml) $("lane").innerHTML = laneHtml = lane;   // redraw only on change, so Render now can be clicked
 
   const ready = s.clips.filter(c => c.stage === "ready");
   const counts = { new: ready.filter(isNew).length, kept: ready.filter(c => c.decision === "keep").length, all: ready.length };
@@ -819,6 +837,9 @@ function openSettings() {
   $("s_save_sound").value = c.save_sound || "off";
   $("s_subtitles").value = c.subtitles || "off";
   $("s_intro").value = c.intro || "off";
+  $("s_wait_for_game_close").checked = c.wait_for_game_close !== false;
+  $("s_game_processes").value = (c.game_processes || []).join(", ");
+  $("s_game_processes").disabled = !$("s_wait_for_game_close").checked;
   subLook = { style: c.subtitle_style || "bold", position: c.subtitle_position || "lower" };
   drawSubPreview();
   obsData = null;   // re-read OBS each time Settings opens
@@ -1146,7 +1167,8 @@ const setText = (el, text) => { if (el.textContent !== text) el.textContent = te
 function updateBanner(u) {   // [message, tone ("busy", "bad" or ""), show Update now]
   const p = u.progress, v = p ? p.version : u.latest;
   if (p && p.state === "downloading") return [`Downloading ClipLab ${v}…`, "busy", false];
-  if (p && p.state === "waiting") return [`ClipLab ${v} installs as soon as nothing is rendering.`, "busy", false];
+  if (p && p.state === "waiting") return [state.hold ? `ClipLab ${v} installs once you close ${state.hold.game}.`
+    : `ClipLab ${v} installs as soon as nothing is rendering.`, "busy", false];
   if (p && (p.state === "installing" || p.state === "restarting")) return [`Updating ClipLab to ${v}. It restarts in a moment.`, "busy", false];
   if (p) return [p.message, "bad", p.state === "failed" && u.available && u.launcher];
   if (!u.available) return null;
@@ -1399,13 +1421,19 @@ $("s_game").addEventListener("change", e => {   // only League's auto-clipper wr
   if (e.target.value !== "league") $("s_tag_wait").value = 0;
   else if (Number($("s_tag_wait").value) === 0) $("s_tag_wait").value = 20;
 });
+$("s_wait_for_game_close").addEventListener("change", e => { $("s_game_processes").disabled = !e.target.checked; });
+$("lane").addEventListener("click", async e => {
+  if (!e.target.closest("#renderNow")) return;
+  if (await post("/api/render_now", {})) { toast(`Rendering now. Back to waiting next time you play ${state.hold ? state.hold.game : ""}`.trim()); refresh(); }
+});
 $("s_blur_zoom").addEventListener("input", e => { $("o_blur_zoom").textContent = Math.round(e.target.value * 100) + "%"; });
 $("settingsForm").addEventListener("submit", async e => {
   e.preventDefault();
   const body = { game: $("s_game").value, styles: ["blur", "crop", "cam"].filter(s => $("s_" + s).checked), watermark: $("s_watermark").value,
                  theme: look.theme, accent: look.accent, save_sound: $("s_save_sound").value,
                  subtitles: $("s_subtitles").value, subtitle_style: subLook.style, subtitle_position: subLook.position,
-                 intro: $("s_intro").value };
+                 intro: $("s_intro").value, wait_for_game_close: $("s_wait_for_game_close").checked,
+                 game_processes: $("s_game_processes").value.split(/[,\n]/).map(x => x.trim()).filter(Boolean) };
   for (const k of NUM_FIELDS) body[k] = Number($("s_" + k).value);
   const r = await post("/api/config", body);
   if (r) { toast("Settings saved"); state.config = { ...state.config, theme: look.theme, accent: look.accent }; $("settings").close(); refresh(); }
