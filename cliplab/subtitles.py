@@ -13,6 +13,7 @@ import time
 import urllib.request
 import uuid
 
+from . import layouts
 from .settings import HOME, NO_WINDOW, RENDER_FLAGS, SUBTITLE_POSITIONS, SUBTITLE_STYLES, WORK, tool
 
 # file name, size in MB, SHA-256 (from Hugging Face's LFS pointers at the pinned revision below)
@@ -151,14 +152,12 @@ def chunk(words, upper=True, max_words=3, max_chars=16, max_gap=0.6):
     return [(round(s, 2), round(e, 2), t) for s, e, t in out if e > s]
 
 
-def anchor(position, cam_top=None):
+def anchor(position, spots=None):
     """(ASS \\an alignment, y) in the 1080x1920 frame, clear of the play labels near the top and the
-    watermark near the bottom. In Webcam on top (cam_top = the webcam strip's height) they stay over the play."""
-    if position == "upper":
-        return 8, (cam_top + 170) if cam_top else 420
-    if position == "center":
-        return 5, (cam_top or 0) + (1920 - (cam_top or 0)) // 2
-    return 2, 1450
+    watermark near the bottom. spots = the Webcam version's spots by position (layouts.frame), which keep
+    subtitles off the webcam."""
+    spots = spots or layouts.SUBS
+    return spots.get(position, spots["lower"])
 
 
 def ass_time(t):
@@ -170,9 +169,9 @@ def ass_text(text):
     return text.replace("\\", "/").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def write_ass(path, chunks, style, position, cam_top=None):
+def write_ass(path, chunks, style, position, spots=None):
     p = PRESETS[style]
-    an, y = anchor(position, cam_top)
+    an, y = anchor(position, spots)
     pop = r"\fscx70\fscy70\t(0,110,\fscx108\fscy108)\t(110,170,\fscx100\fscy100)" if p.get("pop") else ""
     lines = [
         "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920", "WrapStyle: 0",
@@ -191,10 +190,11 @@ def write_ass(path, chunks, style, position, cam_top=None):
     return os.path.relpath(path, HOME).replace("\\", "/")
 
 
-def prepare(src, start, length, cfg, cam_top=None, status=None):
+def prepare(src, start, length, cfg, cam_spots=None, status=None):
     """Make this short's subtitle files: {"normal": path, "cam": path} relative to HOME (render runs there),
-    or {} when nothing was said. Raises SubtitleError (or anything else) on a problem; the engine then renders
-    without subtitles and keeps the reason for the app."""
+    or {} when nothing was said. cam_spots = where the Webcam version's layout leaves room (layouts.frame);
+    None when there's no Webcam version. Raises SubtitleError (or anything else) on a problem; the engine then
+    renders without subtitles and keeps the reason for the app."""
     if not ffmpeg_has_whisper(cfg):
         raise SubtitleError(NO_WHISPER)
     try:
@@ -209,7 +209,7 @@ def prepare(src, start, length, cfg, cam_top=None, status=None):
         return {}
     tag = uuid.uuid4().hex[:8]
     files = {"normal": write_ass(WORK / f"subs-{tag}.ass", chunks, cfg["subtitle_style"], cfg["subtitle_position"])}
-    if cam_top:
+    if cam_spots:
         files["cam"] = write_ass(WORK / f"subs-{tag}-cam.ass", chunks, cfg["subtitle_style"], cfg["subtitle_position"],
-                                 cam_top)
+                                 cam_spots)
     return files

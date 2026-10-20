@@ -32,11 +32,13 @@ WEB = PACKAGE / "web"
 VIDEO_EXT = {".mp4", ".mkv", ".mov"}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW for subprocesses on Windows
 RENDER_FLAGS = NO_WINDOW | (0x00004000 if os.name == "nt" else 0)   # + BELOW_NORMAL_PRIORITY_CLASS for ffmpeg
-ALL_STYLES = ("blur", "crop", "cam")   # cam = webcam on top, gameplay below (needs webcam.rect)
+ALL_STYLES = ("blur", "crop", "cam")   # cam = the Webcam version: webcam + gameplay (needs webcam.rect)
 THEMES = ("system", "dark", "light")
 ACCENTS = ("copper", "blue", "green", "purple", "pink")
 SAVE_SOUNDS = ("off", "chime", "blip", "pop")   # played when OBS saves a replay (see sounds.py)
 WEBCAM_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+CAM_LAYOUTS = ("top", "bottom", "split", "corner")   # where the Webcam version puts your webcam (see layouts.py)
+CAM_SIZES = ("small", "medium", "large")             # the corner layout's box
 SUBTITLES = ("off", "on", "accurate")             # accurate = the bigger speech model (see subtitles.py)
 SUBTITLE_STYLES = ("bold", "pop", "boxed", "clean")
 SUBTITLE_POSITIONS = ("lower", "center", "upper")
@@ -88,6 +90,11 @@ DEFAULTS = {
     "subtitle_style": "bold",
     "subtitle_position": "lower",
     "intro": "off",                        # an attention hook in the first moment of each short
+    "cam_layout": {                        # the Webcam version's layout for new shorts; each short keeps its own
+        "layout": "top",                   # one of CAM_LAYOUTS
+        "corner": "top-left",              # where the box goes in the corner layout
+        "size": "medium",                  # how big that box is
+    },
     "auto_update": "auto",                 # new releases from GitHub; see updater.py
     "webcam": {                            # set by the app's OBS settings, which place the webcam in OBS
         "rect": None,                      # [x, y, w, h] as fractions of OBS's canvas; None = no webcam
@@ -98,7 +105,7 @@ DEFAULTS = {
 APP_EDITABLE = ("game", "styles", "lead_in", "tail", "min_seconds", "max_seconds", "blur_zoom", "watermark",
                 "crf", "maxrate_mbps", "tag_wait", "recycle_tossed_after_days", "theme", "accent", "save_sound",
                 "subtitles", "subtitle_style", "subtitle_position", "intro", "wait_for_game_close", "game_processes",
-                "auto_update")
+                "auto_update", "cam_layout")
 CHOICES = {"theme": THEMES, "accent": ACCENTS, "save_sound": SAVE_SOUNDS, "subtitles": SUBTITLES,
            "subtitle_style": SUBTITLE_STYLES, "subtitle_position": SUBTITLE_POSITIONS, "intro": INTROS,
            "auto_update": AUTO_UPDATES}
@@ -138,6 +145,7 @@ def load_config():
         if cfg[key] not in options:
             cfg[key] = DEFAULTS[key]
     cfg["webcam"]["rect"] = webcam_rect(cfg["webcam"]["rect"])
+    cfg["cam_layout"] = cam_layout(cfg["cam_layout"])
     cfg["feedback_url"] = web_address(cfg["feedback_url"])
     cfg["wait_for_game_close"] = cfg["wait_for_game_close"] is not False   # only an explicit false turns it off
     cfg["game_processes"] = process_names(cfg["game_processes"])[0] if isinstance(cfg["game_processes"], list) else []
@@ -188,6 +196,26 @@ def webcam_rect(rect):
     return [round(v, 4) for v in (x, y, w, h)]
 
 
+CAM_LAYOUT_PARTS = (("layout", CAM_LAYOUTS), ("corner", WEBCAM_CORNERS), ("size", CAM_SIZES))
+
+
+def cam_layout(value):
+    """A webcam layout {"layout", "corner", "size"}, anything missing or unknown in value set to the default
+    (so a short saved before layouts existed, or a hand-edited config, is the webcam on top)."""
+    value = value if isinstance(value, dict) else {}
+    return {k: value[k] if value.get(k) in options else DEFAULTS["cam_layout"][k] for k, options in CAM_LAYOUT_PARTS}
+
+
+def check_cam_layout(value):
+    """Validate a webcam layout sent by the app. Returns (layout, error or None); corner and size may be left out."""
+    if not isinstance(value, dict) or not value.get("layout") or set(value) - {"layout", "corner", "size"}:
+        return None, "Pick a webcam layout."
+    for key, options in CAM_LAYOUT_PARTS:
+        if key in value and value[key] not in options:
+            return None, f"Unknown webcam {'layout' if key == 'layout' else key}: {value[key]}"
+    return cam_layout(value), None
+
+
 def watch_dir(cfg=None):
     return Path((cfg or load_config())["watch_dir"])
 
@@ -228,8 +256,13 @@ def clean_config(changes):
             if not styles:
                 return cfg, "Pick at least one version to render."
             if "cam" in styles and not cfg["webcam"]["rect"]:
-                return cfg, "Set up a webcam under OBS first, then turn on Webcam on top."
+                return cfg, "Set up a webcam under OBS first, then turn on the Webcam version."
             cfg[key] = styles
+        elif key == "cam_layout":
+            layout, error = check_cam_layout(value)
+            if error:
+                return cfg, error
+            cfg[key] = layout
         elif key == "game":
             if not isinstance(value, str) or value not in GAMES:
                 return cfg, f"Unknown game: {value}"

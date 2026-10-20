@@ -4,7 +4,7 @@
 
 Save a replay in OBS (or let the auto-clipper catch your multikills), and about a minute later you have 1080×1920 shorts trimmed to the action, with **TRIPLE KILL**-style text on screen and a caption ready to paste. A small web app lets you watch, keep, toss, re-cut and download them, and stitch a game's best plays into a highlight reel.
 
-- **Two looks per clip:** *Blur fill* (the whole fight, over a blurred backdrop) and *Center crop* (fills the phone screen).
+- **Two looks per clip:** *Blur fill* (the whole fight, over a blurred backdrop) and *Center crop* (fills the phone screen). Place a webcam from the app and there's a third: *Webcam*, your reaction with the play, in the layout you pick.
 - **Smart trims:** with a tag file from the auto-clipper, each short runs from just before the first kill to just after the last.
 - **Re-cut any short** from its raw clip in the app, nudging start and end by half a second.
 - **Highlight reels** of a whole game, or of everything you've kept.
@@ -77,10 +77,19 @@ There's no auto-clipper for Siege: Ubisoft doesn't offer a local game-data API l
 ## OBS from the app
 Settings (⚙) > **OBS** changes OBS for you through its built-in WebSocket server (turn it on once in OBS: Tools > WebSocket Server Settings > Enable WebSocket server). ClipLab reads the password from OBS's own settings, so there's nothing to type.
 - **Microphone** and **Screen**: pick from the devices OBS sees. Picking a screen when your scene only has a game capture adds a screen capture behind it.
-- **Webcam**: pick a camera, a corner and a size. ClipLab puts it in that corner of OBS's picture and makes a **Webcam on top** version of each short: your camera across the top, the play below. Move it in OBS later and ClipLab follows.
+- **Webcam**: pick a camera, a corner and a size. ClipLab puts it in that corner of OBS's picture and makes a **Webcam** version of each short: your camera with the play, laid out the way you pick (see Webcam layouts below). Move it in OBS later and ClipLab follows.
 - **Sound when a replay is saved**: a chime, blip or pop when OBS saves a replay, so you know your hotkey worked.
 
 These work with the OBS on the same PC as ClipLab. In two-PC mode they need ClipLab running on the gaming PC too.
+
+## Webcam layouts
+Where your webcam goes in the **Webcam** version. Pick the layout for new shorts in Settings (⚙) > **Shorts** > **Webcam layout**; the little previews show where your webcam, the play label and the subtitles land.
+- **Top**: your webcam as a strip across the top, the play below (the default, and how earlier shorts were made).
+- **Bottom**: the play on top, your webcam as a strip under it.
+- **Split**: half and half, your webcam on the top half.
+- **Corner**: the play fills the screen and your webcam sits in a rounded box with a white edge, in the corner you pick (Small, Medium or Large). Boxes stay clear of the bar TikTok, Shorts and Reels draw across the top and of the caption at the bottom.
+
+Play labels, subtitles and your watermark always move out of the webcam's way. Each short keeps its own layout through re-cuts and re-renders. To change one short, open it and pick a new **Webcam layout**: only its Webcam version is made again, with the same cut and your current settings.
 
 ## What's new, ideas and the app icon
 - **What's new:** after each update, ClipLab greets you with a pop-up of what changed (once per device). Tap **✨** at the top of the app any time to see it again, or browse the **Patch history** of every version.
@@ -104,11 +113,11 @@ Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs
 | | |
 |---|---|
 | **Browse** | Shorts are grouped by game. Filter by play (DOUBLE KILL, ACE…) or by New / Kept. Hover to preview. |
-| **Player** | Switch versions, Ready to post, Download, Copy caption, Keep, Toss. Keys: ← → browse · P ready to post · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
+| **Player** | Switch versions, Ready to post, Download, Copy caption, Keep, Toss, change the Webcam layout. Keys: ← → browse · P ready to post · K keep · T toss · D download · C copy · 1 / 2 / 3 version. |
 | **Re-cut** | Nudge start/end, preview the cut on the raw clip, then re-render. |
 | **Reels** | "Make a reel of this game" on any game with 2+ shorts, or from everything kept. |
 | **What's new (✨)** | What changed in this version, the patch history of every version, and Request a feature. |
-| **Settings (⚙)** | **Shorts:** game, waiting for your game to close, versions, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app, Updates. |
+| **Settings (⚙)** | **Shorts:** game, waiting for your game to close, versions, webcam layout, watermark, gameplay size, seconds before/after the play, shortest/longest short (up to 3 minutes). **Look:** theme and accent color. **OBS:** mic, screen, webcam, save sound. **More:** quality and housekeeping, the Getting started guide, What's new, Request a feature, Install app, Updates. |
 
 Tossed shorts move to `Tossed\` and go to the Recycle Bin after 14 days (adjustable).
 
@@ -130,6 +139,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `subtitles` | `off` | `off`, `on` or `accurate` (bigger speech model) |
 | `subtitle_style`, `subtitle_position` | `bold`, `lower` | `bold`, `pop`, `boxed` or `clean`; `lower`, `center` or `upper` |
 | `intro` | `off` | `off`, `whoosh` (sound + zoom punch) or `punch` (zoom only) |
+| `cam_layout` | `{"layout": "top", "corner": "top-left", "size": "medium"}` | The Webcam version's layout for new shorts: `layout` is `top`, `bottom`, `split` or `corner`; `corner` (`top-left`, `top-right`, `bottom-left`, `bottom-right`) and `size` (`small`, `medium`, `large`) place the corner box |
 | `wait_for_game_close` | `true` | Hold renders while a game runs on this PC; see [Your game comes first](#your-game-comes-first) |
 | `game_processes` | `[]` | More games to wait for, as program names (`"Fortnite.exe"`) |
 | `auto_update` | `auto` | `auto` installs new releases by itself, `notify` only says one is out, `off` doesn't check (see [Updates](#updates)) |

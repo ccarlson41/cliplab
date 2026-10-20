@@ -21,10 +21,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, obs, obsctl, obsws, sounds, subtitles, updater
+from . import __version__, layouts, obs, obsctl, obsws, sounds, subtitles, updater
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOLD, HOME, NO_WINDOW, PACKAGE, RENDER_NOW, REQUESTS,
-                       STATE, STATUS, THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
-                       tool, watch_dir, webcam_rect, write_json)
+                       STATE, STATUS, THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, cam_layout, check_cam_layout,
+                       clean_config, load_config, output_dir, read_json, tool, watch_dir, webcam_rect, write_json)
 
 MULTI = ("DOUBLE", "TRIPLE", "QUADRA", "PENTA")
 CHANGELOG = PACKAGE / "changelog.json"   # the What's new pop-up and patch history, newest release first
@@ -232,7 +232,9 @@ def build_state():
             "raw": quote(key.replace("\\", "/")) if raw and raw.exists() else None,
             "trimmed": entry.get("trimmed", False), "subtitles_note": entry.get("subtitles_note") or "",
             "busy": status.get("key") == key or any(r.get("key") == key for r in pending),
-            "paths": paths,
+            "paths": paths, "rev": entry.get("done"),   # changes with every render, so the app reloads the picture
+            # the Webcam version's layout, which the player can change (shorts from before layouts: on top)
+            "cam_layout": cam_layout(entry.get("cam_layout")) if "cam" in videos and entry.get("webcam") else None,
         }
         stats["total"] += 1
         stats["week"] += (entry.get("done") or "") >= week_ago
@@ -253,6 +255,8 @@ def build_state():
             "games": {k: g["name"] for k, g in GAMES.items()}, "setup_needed": setup_needed, "results": results,
             "hold": game_hold(health),
             "speech_to_text": subtitles.ffmpeg_has_whisper(cfg),   # checked once, then cached
+            # the webcam layout previews, drawn for your webcam's shape (a 16:9 one before you've placed it)
+            "cam_preview": layouts.preview(cfg["webcam"]["rect"] or [0, 0, 0.25, 0.25]),
             "queue": len(pending), "version": __version__, "update": updater.summary(cfg),
             "now": datetime.now().isoformat(timespec="seconds")}
 
@@ -469,6 +473,21 @@ class Handler(BaseHTTPRequestHandler):
                 job.update(start=start, end=end)
             return self.send_json({"ok": True, "id": queue_job(job)})
 
+        if route == "/api/layout":   # a new webcam layout for one short: its Webcam version is made again
+            body = body if isinstance(body, dict) else {}
+            key = body.get("key")
+            entry = state.get(key, {}) if isinstance(key, str) else {}
+            if not entry.get("webcam") or not any(o.endswith("_cam.mp4") for o in entry.get("outputs", [])):
+                return self.send_json({"error": "This short has no Webcam version."}, 400)
+            if not (watch_dir() / key).exists():
+                return self.send_json({"error": "The raw clip for this short is gone, so its layout can't change."}, 400)
+            layout, error = check_cam_layout(body.get("cam_layout"))
+            if error:
+                return self.send_json({"error": error}, 400)
+            if layouts.same(layout, entry.get("cam_layout")):
+                return self.send_json({"ok": True, "unchanged": True})
+            return self.send_json({"ok": True, "id": queue_job({"type": "layout", "key": key, "cam_layout": layout})})
+
         if route == "/api/reel":
             keys = [k for k in body.get("keys", []) if k in state]
             if len(keys) < 2:
@@ -496,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": str(e)}, 400)
             except Exception as e:  # an OBS version that answers differently
                 return self.send_json({"error": f"OBS answered in a way ClipLab didn't expect ({e})."}, 400)
-            if rect != "unchanged":   # the webcam moved, appeared or went away: keep the Webcam on top version in step
+            if rect != "unchanged":   # the webcam moved, appeared or went away: keep the Webcam version in step
                 cfg = load_config()
                 cfg["webcam"] = {"rect": webcam_rect(rect), "corner": changes["webcam"]["corner"],
                                  "size": changes["webcam"]["size"]}
