@@ -7,7 +7,8 @@
    {"icon": "🎉", "headline": "This pop-up!", "text": "Whenever ClipLab updates, you get a quick tour of what's new, confetti included."},
    {"icon": "📜", "headline": "Patch history", "text": "Tap ✨ at the top of the app to look back at every update ClipLab has had."},
    {"icon": "💡", "headline": "Request a feature", "text": "Got an idea? Write it up in the app and ClipLab opens a GitHub feature request with it filled in. Submit it there with a free GitHub account.", "action": "request"},
-   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"}
+   {"icon": "📲", "headline": "Install ClipLab as an app", "text": "Put ClipLab on your taskbar or home screen so it opens like any other app.", "action": "install"},
+   {"icon": "📱", "headline": "Phone access, one switch", "text": "Flip on Phone access in Settings > More, scan the QR code, and ClipLab opens on your phone over your home Wi-Fi.", "action": "phone"}
   ]
  },
  {

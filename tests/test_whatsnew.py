@@ -18,7 +18,7 @@ os.environ["CLIPLAB_HOME"] = tempfile.mkdtemp(prefix="cliplab-test-")   # never 
 from cliplab import __version__, server  # noqa: E402
 from cliplab.settings import CONFIG, HOME, WEB, load_config, web_address, write_json  # noqa: E402
 
-ACTIONS = {"install", "request", "history"}   # the buttons a highlight can carry (ACTIONS in index.html)
+ACTIONS = {"install", "request", "history", "phone"}   # the buttons a highlight can carry (ACTIONS in index.html)
 VERSION = re.compile(r"\d+\.\d+\.\d+$")
 
 

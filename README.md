@@ -49,7 +49,7 @@ Run the same line again later to update ClipLab; your settings and shorts are ke
 3. **Set up OBS:** Settings → Output → Replay Buffer: on, 45–60 seconds. Set the recording path to the same folder (`C:\Clips`) and give *Save Replay* a hotkey.
 4. Play, press your replay hotkey after a big play, then open **http://localhost:8765**. (Or follow the Getting started guide there.)
 
-Add `-AllowLan` to setup to open the app from your phone on the same Wi-Fi.
+To open the app from your phone on the same Wi-Fi, turn on **Phone access** in Settings > More (see below), or add `-AllowLan` to setup.
 
 ## Auto-clipping League
 The [`clipper/`](clipper/README.md) folder watches the game through Riot's official local [Live Client Data API](https://developer.riotgames.com/docs/lol#game-client-api), saves a replay through OBS on multikills, aces and objective steals, and writes a [tag file](docs/tag-format.md) so ClipLab can trim and label the short. Any other tool can write tag files too; the format is documented.
@@ -82,6 +82,13 @@ These work with the OBS on the same PC as ClipLab. In two-PC mode they need Clip
 - **Request a feature:** the ✨ pop-up (or Settings > More) has a short form. It opens a GitHub issue with your idea filled in; press the green button there to send it (needs a free GitHub account).
 - **Install app:** Settings > More > **Install app** (or the button at the top on phones) gives ClipLab its own icon. On this PC, Edge and Chrome install it as an app. On an iPhone, use Safari's Share > Add to Home Screen. Phones reach ClipLab over home Wi-Fi without https, so Android adds a home-screen shortcut that opens in Chrome rather than a full app.
 
+## Phone access
+Settings > More > **Phone access** lets your phone (or any device on your home Wi-Fi) open ClipLab. Turning it on restarts the app on your home network and shows this PC's address with a QR code to scan. ClipLab picks your Wi-Fi or Ethernet adapter and skips Hyper-V, WSL and VPN ones. Only someone at this PC can turn it on or off, never a phone.
+
+The first time, Windows may ask whether Python can use the network: tick **Private networks** and allow it. If a phone still can't connect, check it's on the same Wi-Fi. Then in Windows Security > Firewall & network protection > Allow an app through firewall, tick **Private** for Python (pythonw.exe). Also make sure Windows treats your Wi-Fi as a private network. ClipLab never changes firewall rules itself.
+
+Installed before this switch existed? It's in Settings > More now. Setup also takes `-AllowLan` or `-NoLan` on an existing install.
+
 ## Two PCs
 Got a spare laptop? Let it do the rendering so your gaming PC doesn't. See [docs/two-machines.md](docs/two-machines.md).
 
@@ -106,7 +113,7 @@ Settings live in `%USERPROFILE%\ClipLab\config.json` (or `%CLIPLAB_HOME%`). Rend
 | `output_dir` | `ClipLab\Ready` | Where shorts go (must not be inside `watch_dir`) |
 | `ffmpeg` | *(auto)* | Folder with ffmpeg/ffprobe; otherwise `ClipLab\bin`, then PATH |
 | `port` | `8765` | App port |
-| `allow_lan` | `false` | Let other devices on your home network open the app |
+| `allow_lan` | `false` | Let other devices on your home network open the app (Settings > More > Phone access, or setup `-AllowLan` / `-NoLan`) |
 | `peer` | *(empty)* | Two-PC mode; see [docs/two-machines.md](docs/two-machines.md) |
 | `setup_done` | `false` | Set when you finish the app's Getting started guide; set it back to `false` to see the guide on its own again |
 | `feedback_url` | *(GitHub)* | Where Request a feature sends people. Empty opens a new GitHub issue on this repo. Set an `http(s)` address (say, a Google Form) to use that instead; `{what}`, `{why}`, `{name}`, `{title}` and `{version}` in it are filled in from the app's form, and without them the app copies the idea for pasting |

@@ -11,6 +11,10 @@
   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips -AllowLan
 
 .EXAMPLE
+  # Already installed: turn phone access on (or off with -NoLan). Settings > More in the app does the same.
+  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -AllowLan
+
+.EXAMPLE
   # Rainbow Six Siege player: Siege captions, and no waiting for League auto-clipper tag files
   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -WatchDir C:\Clips -Game r6
 #>
@@ -19,11 +23,13 @@ param(
   [string]$OutputDir = (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'ClipLab Shorts'),
   [ValidateSet('league', 'r6', 'valorant')][string]$Game = 'league',
   [switch]$AllowLan,
+  [switch]$NoLan,
   [switch]$InstallObs,
   [switch]$NoStartup,
   [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
+if ($AllowLan -and $NoLan) { throw 'Pick one: -AllowLan turns phone access on, -NoLan turns it off.' }
 $Game = $Game.ToLower()   # ValidateSet lets "R6" through; ClipLab's keys are lowercase
 $Repo = Split-Path $PSScriptRoot -Parent
 $Home2 = if ($env:CLIPLAB_HOME) { $env:CLIPLAB_HOME } else { Join-Path $env:USERPROFILE 'ClipLab' }
@@ -115,6 +121,12 @@ if ((Test-Path $config) -and -not $Force) {
     [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json -Depth 5), $Utf8)
     Write-Host "  Game set to $Game."
   }
+  if ($AllowLan -or $NoLan) {   # phone access, for installs from before the app had a switch for it
+    $cfg = Get-Content $config -Raw | ConvertFrom-Json
+    $cfg | Add-Member -NotePropertyName allow_lan -NotePropertyValue ([bool]$AllowLan) -Force
+    [IO.File]::WriteAllText($config, ($cfg | ConvertTo-Json -Depth 5), $Utf8)
+    Write-Host ('  Phone access ' + $(if ($AllowLan) { 'on.' } else { 'off.' }))
+  }
 } else {
   New-Item -ItemType Directory -Force $WatchDir, $OutputDir | Out-Null
   $cfg = [ordered]@{ watch_dir = (Resolve-Path $WatchDir).Path; output_dir = (Resolve-Path $OutputDir).Path; allow_lan = [bool]$AllowLan; game = $Game }
@@ -143,4 +155,4 @@ Write-Host ''
 Write-Host "ClipLab is running: http://localhost:$port" -ForegroundColor Green
 Write-Host "  Raw clips:  $watch   (point OBS's replay buffer here)"
 Write-Host "  Shorts:     $shorts"
-if ($saved.allow_lan) { Write-Host '  Other devices: allow Python through Windows Firewall on Private networks, then use this PC''s IP.' }
+if ($saved.allow_lan) { Write-Host '  Phone access is on: the address and a QR code are in the app under Settings > More. If Windows asks about Python, allow Private networks.' }
