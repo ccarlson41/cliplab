@@ -67,6 +67,7 @@ class HostTests(unittest.TestCase):
 
     def test_this_pc_is_answered(self):
         for host in ("localhost", "localhost:8765", "LocalHost:8765", "localhost.:8765",
+                     "cliplab.localhost:8765", "ClipLab.LocalHost",
                      "127.0.0.1", "127.0.0.1:8765", "[::1]", "[::1]:8765",
                      "gaming-pc:8765", "Gaming-PC", "gaming-pc.local:8765", "gaming-pc.lan", None, ""):
             self.assertFalse(server.foreign_host(host), host)
@@ -76,7 +77,7 @@ class HostTests(unittest.TestCase):
             self.assertFalse(server.foreign_host(host), host)
 
     def test_other_names_are_refused(self):
-        for host in ("evil.example", "evil.example:8765", "localhost.evil.example:8765", "127.0.0.1.evil.example",
+        for host in ("evil.example", "evil.example:8765", "localhost.evil.example:8765", "evil.localhost.example", "evillocalhost", "127.0.0.1.evil.example",
                      "gaming-pc.evil.example", "other-pc:8765", "evil.local", "lan",
                      ":8765", "localhost:", "localhost:abc", "localhost:8765:1", "[::1", "[::1]x", "[::1]:",
                      "[127.0.0.1]:8765", "[evil.example]:8765", "::1"):

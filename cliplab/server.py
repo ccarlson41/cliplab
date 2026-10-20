@@ -314,8 +314,9 @@ def foreign_host(host):
 
     A site can point its own domain at 127.0.0.1 (DNS rebinding); the browser then treats the app as part
     of that site, so its Origin and Host agree and cross_site() can't tell. Only names that can't belong to
-    another website are answered: localhost, an IP address (how a phone reaches the app with allow_lan),
-    and this PC's own name, optionally ending in .local or .lan, with or without the port.
+    another website are answered: localhost and names ending in .localhost (browsers send those to this PC
+    themselves), an IP address (how a phone reaches the app with allow_lan), and this PC's own name,
+    optionally ending in .local or .lan, with or without the port.
     No Host at all (old scripts on this PC) is let through; browsers always send one."""
     host = (host or "").strip().lower()
     if not host:
@@ -337,8 +338,10 @@ def foreign_host(host):
         return False
     except ValueError:
         pass
+    if name == "localhost" or name.endswith(".localhost"):
+        return False
     pc = socket.gethostname().lower()
-    return not name or name not in ("localhost", pc, pc + ".local", pc + ".lan")
+    return not name or name not in (pc, pc + ".local", pc + ".lan")
 
 
 def queue_job(job):
@@ -460,19 +463,6 @@ class Handler(BaseHTTPRequestHandler):
             path = thumbnail(route[len("/thumb/"):])
             return self.send_file(path, cache=True) if path else self.send_error(404)
         self.send_error(404)
-
-    def discard_body(self):
-        """Read and drop a refused POST's body. Closing with it unread makes Windows reset the
-        connection, and the sender can lose the refusal before reading it."""
-        try:
-            left = min(int(self.headers.get("Content-Length") or 0), 1 << 20)
-        except ValueError:
-            return
-        while left > 0:
-            chunk = self.rfile.read(min(65536, left))
-            if not chunk:
-                break
-            left -= len(chunk)
 
     def do_POST(self):
         if not self.local_only():
