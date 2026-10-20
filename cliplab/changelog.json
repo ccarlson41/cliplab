@@ -1,5 +1,15 @@
 [
  {
+  "version": "0.11.0",
+  "date": "2026-10-20",
+  "title": "ClipLab in your pocket",
+  "highlights": [
+   {"icon": "📱", "headline": "Phone access, one switch", "text": "Flip on Phone access in Settings > More and ClipLab opens on your phone over your home Wi-Fi. No settings files to edit.", "action": "phone"},
+   {"icon": "📷", "headline": "Scan and you're in", "text": "Settings shows this PC's address with a QR code. Point your phone's camera at it and ClipLab opens."},
+   {"icon": "🛡️", "headline": "Firewall help built in", "text": "Phone won't connect? ClipLab walks you through letting it past Windows Firewall. It never changes your firewall itself."}
+  ]
+ },
+ {
   "version": "0.10.0",
   "date": "2026-10-17",
   "title": "ClipLab keeps itself fresh",

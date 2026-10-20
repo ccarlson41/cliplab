@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, obs, obsctl, obsws, sounds, subtitles, updater
+from . import __version__, lan, obs, obsctl, obsws, sounds, subtitles, updater
 from .settings import (CONFIG, DECISIONS, FAILED, GAMES, HEARTBEAT, HOLD, HOME, NO_WINDOW, PACKAGE, RENDER_NOW, REQUESTS,
                        STATE, STATUS, THUMBS, TOSSED, VIDEO_EXT, WEB, WEBCAM_CORNERS, clean_config, load_config, output_dir, read_json,
                        tool, watch_dir, webcam_rect, write_json)
@@ -36,6 +36,7 @@ FEEDBACK_GITHUB = ("https://github.com/ccarlson41/cliplab/issues/new?template=fe
                    "&labels=feature-request&title={title}&what={what}&why={why}&name={name}&version={version}")
 thumb_lock = threading.Lock()
 sync_cache = {"at": 0.0, "data": None}
+_httpd = None   # the running server, so changing phone access can restart it on the new address
 
 
 def syncthing(peer):
@@ -157,6 +158,26 @@ def obs_changes(body):
             return None, "Pick a webcam, a corner and a size."
         changes["webcam"] = {"device": device, "corner": corner, "size": size}
     return changes, None
+
+
+def lan_state(port, on, from_pc):
+    """Phone access for Settings > More: whether it's on, the address a phone uses, and a QR code for it."""
+    state = {"on": bool(on), "can_change": from_pc, "port": port, "addresses": [], "url": None, "qr": None}
+    if on:
+        state["addresses"] = [dict(a, url=f"http://{a['ip']}:{port}/") for a in lan.phone_addresses()]
+        if state["addresses"]:
+            state["url"] = state["addresses"][0]["url"]
+            state["qr"] = lan.qr_svg(state["url"])
+    return state
+
+
+def restart_soon():
+    """Stop serving so the launcher starts the app again, bound to the address phone access now asks for.
+    Returns False when there's no running server to restart (tests, or the app started some other way)."""
+    if _httpd is None:
+        return False
+    threading.Thread(target=lambda: (time.sleep(0.4), _httpd.shutdown()), daemon=True).start()
+    return True
 
 
 def build_state():
@@ -329,10 +350,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def local_only(self):
+    def client_ip(self):
         ip = ipaddress.ip_address(self.client_address[0].split("%")[0])
-        if getattr(ip, "ipv4_mapped", None):
-            ip = ip.ipv4_mapped
+        return getattr(ip, "ipv4_mapped", None) or ip
+
+    def local_only(self):
+        ip = self.client_ip()
         if ip.is_loopback or ((ip.is_private or ip.is_link_local) and load_config()["allow_lan"]):
             return True
         self.send_error(403, "ClipLab only answers this PC (and your home network when allow_lan is on)")
@@ -410,6 +433,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_file(WEB / route.lstrip("/"), cache=True)
         if route == "/api/state":
             return self.send_json(build_state())
+        if route == "/api/lan":
+            cfg = load_config()
+            return self.send_json(lan_state(int(cfg["port"]), cfg["allow_lan"], self.client_ip().is_loopback))
         if route == "/api/setup":
             return self.send_json(setup_state())
         if route == "/api/changelog":
@@ -505,6 +531,19 @@ class Handler(BaseHTTPRequestHandler):
                 write_json(CONFIG, cfg)
             return self.send_json({"ok": True, "note": note})
 
+        if route == "/api/lan":
+            # only someone at this PC may open it to (or close it off from) the network, never a phone
+            if not self.client_ip().is_loopback:
+                return self.send_json({"error": "Turn phone access on or off on the PC that runs ClipLab."}, 403)
+            if not isinstance(body.get("on"), bool):
+                return self.send_json({"error": "Send on: true or false."}, 400)
+            cfg = load_config()
+            if cfg["allow_lan"] == body["on"]:
+                return self.send_json({"ok": True, "restarting": False})
+            cfg["allow_lan"] = body["on"]
+            write_json(CONFIG, cfg)
+            return self.send_json({"ok": True, "restarting": restart_soon()})
+
         if route == "/api/render_now":   # render anyway until the game closes (the engine clears it then)
             if not game_hold(engine_health()):
                 return self.send_json({"error": "Nothing is waiting for a game right now."}, 400)
@@ -535,4 +574,11 @@ def main():
     mimetypes.add_type("application/manifest+json", ".webmanifest")
     mimetypes.add_type("image/svg+xml", ".svg")
     host = "0.0.0.0" if cfg["allow_lan"] else "127.0.0.1"
-    ThreadingHTTPServer((host, int(cfg["port"])), Handler).serve_forever()
+    if cfg["allow_lan"]:   # look up the phone address now, so Settings shows it without the PowerShell wait
+        threading.Thread(target=lan.phone_addresses, daemon=True).start()
+    global _httpd
+    _httpd = ThreadingHTTPServer((host, int(cfg["port"])), Handler)
+    try:
+        _httpd.serve_forever()   # until restart_soon(); then this exits and the launcher starts the app again
+    finally:
+        _httpd.server_close()

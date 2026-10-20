@@ -61,6 +61,9 @@
     if ($lan) { $setupArgs += '-AllowLan' }
   } else {
     Write-Host "Updating the ClipLab in $dir. Your settings are kept (change them in the app)."
+    $lanOn = $false
+    try { $lanOn = [bool](Get-Content $config -Raw | ConvertFrom-Json).allow_lan } catch {}
+    if (-not $lanOn) { Write-Host 'Want ClipLab on your phone too? Turn on Phone access in the app: Settings > More.' }
   }
   Write-Host ''
 
